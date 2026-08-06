@@ -1,6 +1,6 @@
 # VPS CI/CD
 
-A self-hosted, webhook-driven sync & deploy runner for your VPS. Point GitHub / GitLab (or any webhook source) at one URL; when you push, the bound folder on the server syncs to the right branch and your post-sync commands run — with every run fully logged in a clean web panel.
+A self-hosted, webhook-driven sync & deploy runner for your VPS. Point GitHub, GitLab, Bitbucket, Gitea/Forgejo, Gogs (or any webhook source) at one URL; when you push, the bound folder on the server syncs to the right branch and your post-sync commands run — with every run fully logged in a clean web panel.
 
 ```
 push to main ──▶ webhook ──▶ verify secret ──▶ git sync folder ──▶ run commands ──▶ logged
@@ -8,19 +8,19 @@ push to main ──▶ webhook ──▶ verify secret ──▶ git sync folder
 
 ## Features
 
-- **Multiple sync services** — bind any folder on the server (anywhere) to any repo. Mix GitHub, GitLab and generic webhook sources freely.
+- **Multiple sync services** — bind any folder on the server (anywhere) to any repo. Mix GitHub, GitLab, Bitbucket, Gitea/Forgejo, Gogs and generic webhook sources freely.
 - **Branch control per service**
-  - *Follow webhook branch* — a push to `staging` checks out `staging`, a push to `main` checks out `main`.
-  - *Fixed branch* — the folder always switches to one configured branch.
-  - *Stay on current branch* — never switch, only refresh.
-  - Optional **allowed-branches list** (e.g. `main, staging`); other pushes are logged as *skipped*.
+  - _Follow webhook branch_ — a push to `staging` checks out `staging`, a push to `main` checks out `main`.
+  - _Fixed branch_ — the folder always switches to one configured branch.
+  - _Stay on current branch_ — never switch, only refresh.
+  - Optional **allowed-branches list** (e.g. `main, staging`); other pushes are logged as _skipped_.
 - **Sync modes** — `pull` (fast-forward, default) or `reset` (hard-reset to the remote branch), per service.
 - **Auto-clone** — if the folder is empty / not a repository yet, the repo is cloned on first trigger.
 - **Post-sync commands** — ordered shell commands run in the folder after a successful sync.
   - `{branch}` and `{sha}` placeholders, e.g. `npm run docker:{branch}:up`.
   - Optional per-command **branch filter** (run only when the synced branch matches).
   - Optional **continue-on-error** per command.
-- **Webhook secrets** — GitHub `X-Hub-Signature-256` (HMAC SHA-256), GitLab `X-Gitlab-Token`, or a generic token header / `?token=` query param. Verified with timing-safe comparison.
+- **Webhook secrets** — per-provider verification, timing-safe: GitHub `X-Hub-Signature-256` (HMAC SHA-256), GitLab `X-Gitlab-Token`, Gitea/Forgejo `X-Gitea-Signature` / `X-Forgejo-Signature` (HMAC), Gogs `X-Gogs-Signature` (HMAC), Bitbucket optional `?token=` (Bitbucket Cloud doesn't sign), or a generic token header / `?token=` query param.
 - **Trigger history** — every webhook (accepted, skipped, rejected) and manual run is stored with a full timestamped log (git output + command output), viewable in the panel.
 - **Auth** — single admin account with default credentials (change after login, no registration), session cookies, login throttling, and **password reset via security question**.
 - **UI** — Svelte SPA, dark/light theme, sidebar + header layout, responsive.
@@ -36,82 +36,107 @@ push to main ──▶ webhook ──▶ verify secret ──▶ git sync folder
 ```bash
 npm install          # installs server + web workspaces
 npm run build        # builds the Svelte UI into web/dist
-npm start            # boots the server (serves API + UI) on :3000
+npm start            # boots the server — API + UI on one port
 ```
 
-Open `http://your-vps:3000` and sign in with the default credentials:
+The startup banner prints the port. Without a `PORT` env var, a random 5-digit port is chosen on first boot and remembered in `data/runtime.json` (so webhook URLs stay stable). Open `http://your-vps:<port>` and sign in with the default credentials:
 
 ```
 username: admin
 password: admin123
 ```
 
-You'll be asked to set your own password on first login. Then set a **security question** in *Settings* — it is the only password-recovery path.
+You'll be asked to set your own password on first login. Then set a **security question** in _Settings_ — it is the only password-recovery path.
 
-Development mode (hot reload + API proxy):
+Development mode — same single port, with Svelte hot reload (Vite runs as middleware inside the server):
 
 ```bash
-npm run dev          # server on :3000, UI on :5173
+npm run dev
 ```
 
 ## Configuration
 
 Copy `.env.example` to `.env` and adjust as needed. All variables are optional:
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` / `HOST` | `3000` / `0.0.0.0` | HTTP listen address |
-| `DATA_DIR` | `./data` | Where the SQLite DB lives |
-| `DATABASE_FILE` | `<DATA_DIR>/app.db` | Explicit DB path override |
-| `SESSION_DAYS` | `7` | Session cookie lifetime |
-| `COOKIE_SECURE` | `false` | Set `true` when served over HTTPS |
-| `DEFAULT_ADMIN_USER` / `DEFAULT_ADMIN_PASS` | `admin` / `admin123` | Used only while the users table is empty |
+| Variable                                    | Default              | Purpose                                                                            |
+| ------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------- |
+| `PORT` / `HOST`                             | random / `0.0.0.0`   | Single port for API + UI; unset = random 5-digit, persisted in `data/runtime.json` |
+| `DATA_DIR`                                  | `./data`             | Where the SQLite DB lives                                                          |
+| `DATABASE_FILE`                             | `<DATA_DIR>/app.db`  | Explicit DB path override                                                          |
+| `SESSION_DAYS`                              | `7`                  | Session cookie lifetime                                                            |
+| `COOKIE_SECURE`                             | `false`              | Set `true` when served over HTTPS                                                  |
+| `DEFAULT_ADMIN_USER` / `DEFAULT_ADMIN_PASS` | `admin` / `admin123` | Used only while the users table is empty                                           |
 
 ## Connecting a repository
 
-Create a **service** in the panel (*Services → New service*). Each service gets a unique webhook URL like:
+Create a **service** in the panel (_Services → New service_). Each service gets a unique webhook URL like:
 
 ```
-https://your-vps:3000/api/hooks/<token>
+https://your-vps:<port>/api/hooks/<token>
 ```
 
 ### GitHub
 
-Repo → *Settings → Webhooks → Add webhook*:
+Repo → _Settings → Webhooks → Add webhook_:
 
 - **Payload URL**: the service's webhook URL
 - **Content type**: `application/json`
 - **Secret**: paste the secret from the service (or generate one in the panel and copy it)
-- **Events**: *Just the push event* (other events are safely ignored)
+- **Events**: _Just the push event_ (other events are safely ignored)
 
 ### GitLab
 
-Repo → *Settings → Webhooks*:
+Repo → _Settings → Webhooks_:
 
 - **URL**: the service's webhook URL
 - **Secret token**: the service's secret
-- **Trigger**: *Push events*
+- **Trigger**: _Push events_
+
+### Bitbucket
+
+Repo → _Repository settings → Webhooks → Add webhook_:
+
+- **URL**: the service's webhook URL (append `?token=<secret>` if you set one)
+- **Triggers**: _Repository push_
+
+Bitbucket Cloud does not sign payloads, so the service verifies an optional token you append to the URL. Leave the secret empty to accept unsigned deliveries — treat the hook URL as private in that case. Branch and commit are read from `push.changes[].new`.
+
+### Gitea / Forgejo (incl. Codeberg)
+
+Repo → _Settings → Webhooks → Add webhook → Gitea_:
+
+- **Target URL**: the service's webhook URL
+- **Secret**: the service's secret (sent as an HMAC SHA-256 `X-Gitea-Signature` / `X-Forgejo-Signature`)
+- **Trigger on**: _Push events_
+
+### Gogs
+
+Repo → _Settings → Webhooks → Add webhook_:
+
+- **Payload URL**: the service's webhook URL
+- **Secret**: the service's secret (sent as an HMAC SHA-256 `X-Gogs-Signature`)
+- **Trigger**: _Push_
 
 ### Anything else
 
-Any tool that can POST JSON works. Send the token in the configured header (default `X-Webhook-Token`) or as `?token=…`. Payloads with a `ref` of the form `refs/heads/<branch>` (GitHub/GitLab push format) get full branch handling; a `branch` field also works.
+Any tool that can POST JSON works. Send the token in the configured header (default `X-Webhook-Token`) or as `?token=…`. Payloads with a `ref` of the form `refs/heads/<branch>` (GitHub/GitLab/Gitea/Gogs push format) get full branch handling; a `branch` field also works.
 
 ### Testing without pushing
 
 ```bash
-npm run simulate:hook -- "http://localhost:3000/api/hooks/<token>" \
+npm run simulate:hook -- "http://localhost:<port>/api/hooks/<token>" \
   --provider github --secret <secret> --branch staging
 ```
 
 ## How a trigger runs
 
-1. Signature / token is verified (mismatches are stored as *rejected* and answered `401`).
-2. Non-push events and tag pushes are stored as *skipped*.
+1. Signature / token is verified (mismatches are stored as _rejected_ and answered `401`).
+2. Non-push events and tag pushes are stored as _skipped_.
 3. The pushed branch is checked against the allowed list (if configured).
 4. The run is queued — one run per service at a time; if one is already running, only the newest pending trigger is kept.
 5. `git fetch` → checkout the target branch → `pull --ff-only` or `reset --hard origin/<branch>` (clones first if the folder is empty and auto-clone is on).
-6. Commands run top-to-bottom in the folder; a failing command stops the run unless *continue on error* is set.
-7. Everything is written to the trigger log (view in *Activity*).
+6. Commands run top-to-bottom in the folder; a failing command stops the run unless _continue on error_ is set.
+7. Everything is written to the trigger log (view in _Activity_).
 
 ## Deploying on a VPS
 
@@ -147,7 +172,7 @@ server {
     server_name deploy.example.com;
     # ... your cert config ...
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:<port>;   # the port from the startup banner / PORT env
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

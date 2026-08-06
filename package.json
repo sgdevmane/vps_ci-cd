@@ -8,15 +8,12 @@
     "web"
   ],
   "scripts": {
-    "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
+    "dev": "npm run dev -w server",
     "build": "npm run build -w web",
     "start": "NODE_ENV=production node server/src/index.js",
     "simulate:hook": "node scripts/simulate-webhook.mjs"
   },
   "engines": {
     "node": ">=20"
-  },
-  "devDependencies": {
-    "concurrently": "^10.0.4"
   }
 }
