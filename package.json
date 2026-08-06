@@ -1,0 +1,22 @@
+{
+  "name": "vps-ci-cd",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Webhook-driven git sync & deploy runner for your VPS",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w web",
+    "start": "NODE_ENV=production node server/src/index.js",
+    "simulate:hook": "node scripts/simulate-webhook.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
+  }
+}

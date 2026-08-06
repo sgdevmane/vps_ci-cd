@@ -1,0 +1,23 @@
+[Unit]
+Description=VPS CI/CD — webhook git sync & deploy runner
+After=network.target
+
+[Service]
+Type=simple
+# Run as the user that owns the code and the deploy folders.
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/vps-ci-cd
+Environment=NODE_ENV=production
+# Optional overrides (PORT, HOST, DATA_DIR, ...). See .env.example.
+EnvironmentFile=-/opt/vps-ci-cd/.env
+ExecStart=/usr/bin/node server/src/index.js
+Restart=on-failure
+RestartSec=2
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
