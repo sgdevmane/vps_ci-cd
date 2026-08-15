@@ -3,6 +3,7 @@ import { db, insertReturning } from '../db/index.js';
 import { requireAuth } from '../auth/session.js';
 import { nowIso } from '../util/misc.js';
 import { sendToChannel } from '../core/notifications.js';
+import { auditLog } from '../core/audit.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -32,6 +33,7 @@ router.post('/channels', async (req, res, next) => {
       updated_at: nowIso(),
     });
     const channel = await db('notification_channels').where({ id }).first();
+    auditLog({ userId: req.user.id, action: 'channel.created', targetType: 'channel', targetId: id, details: { name, provider }, ip: req.ip });
     res.status(201).json({ channel });
   } catch (err) {
     next(err);
@@ -66,6 +68,7 @@ router.delete('/channels/:id', async (req, res, next) => {
   try {
     const deleted = await db('notification_channels').where({ id: req.params.id }).del();
     if (!deleted) return res.status(404).json({ error: 'Channel not found' });
+    auditLog({ userId: req.user.id, action: 'channel.deleted', targetType: 'channel', targetId: req.params.id, details: existing ? { name: existing.name, provider: existing.provider } : null, ip: req.ip });
     res.json({ ok: true });
   } catch (err) {
     next(err);

@@ -1,5 +1,5 @@
 <script>
-  import { Send, CheckCircle2, AlertTriangle, ArrowRight, Radio } from '@lucide/svelte';
+  import { Send, CheckCircle2, AlertTriangle, ArrowRight } from '@lucide/svelte';
   import Modal from './Modal.svelte';
   import ProviderIcon from './ProviderIcon.svelte';
   import { navigate } from '../lib/router.svelte.js';

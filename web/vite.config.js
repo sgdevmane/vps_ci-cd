@@ -6,8 +6,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Must match the PORT in .env.local
       "/api": {
-        target: "http://127.0.0.1:3000",
+        target: "http://127.0.0.1:24816",
         changeOrigin: false,
       },
     },

@@ -35,7 +35,7 @@ async function request(endpoint, options = {}) {
   const url = `${cfg.baseUrl.replace(/\/$/, '')}${endpoint}`;
   const headers = {
     'Content-Type': 'application/json',
-    ...(cfg.token ? { Cookie: `session=${cfg.token}` } : {}),
+    ...(cfg.token ? { Cookie: `vcid_session=${cfg.token}` } : {}),
     ...(options.headers || {}),
   };
 
@@ -76,7 +76,7 @@ async function main() {
         }
         const cookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [res.headers.get('set-cookie') || ''];
         const cookieStr = cookies.join('; ');
-        const match = cookieStr.match(/session=([^;]+)/);
+        const match = cookieStr.match(/vcid_session=([^;]+)/);
         const token = match ? match[1] : '';
         saveConfig({ baseUrl: url, token });
         console.log(`✅ Successfully signed in to ${url} as "${username}"`);

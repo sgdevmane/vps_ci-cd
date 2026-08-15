@@ -26,4 +26,5 @@ export const api = {
   post: (url, body) => request('POST', url, body ?? {}),
   put: (url, body) => request('PUT', url, body ?? {}),
   del: (url) => request('DELETE', url),
+  delete: (url) => request('DELETE', url), // alias kept for readability at call sites
 };

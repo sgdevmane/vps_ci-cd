@@ -10,6 +10,7 @@ import { nowIso, parseList } from "../util/misc.js";
 import { enqueueTrigger } from "../core/runner.js";
 import { getSetting, baseUrlFor } from "../core/appSettings.js";
 import { PROVIDER_NAMES } from "../webhooks/verify.js";
+import { auditLog } from "../core/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -94,7 +95,6 @@ async function serialize(req, row, { withCommands = false } = {}) {
     clone_if_empty: !!row.clone_if_empty,
     auto_rollback: !!row.auto_rollback,
     maintenance_mode: !!row.maintenance_mode,
-    mustChangePassword: undefined,
     hook_url: await hookUrlFor(req, row.hook_token),
   };
   if (withCommands) {
@@ -144,6 +144,7 @@ router.post("/", async (req, res, next) => {
     });
     if (req.body?.commands !== undefined) await replaceCommands(id, commands);
     const row = await db("services").where({ id }).first();
+    auditLog({ userId: req.user.id, action: "service.created", targetType: "service", targetId: id, details: { name: value.name, provider: value.provider }, ip: req.ip });
     res
       .status(201)
       .json({ service: await serialize(req, row, { withCommands: true }) });
@@ -175,6 +176,7 @@ router.put("/:id", async (req, res, next) => {
     if (req.body?.commands !== undefined)
       await replaceCommands(existing.id, commands);
     const row = await db("services").where({ id: existing.id }).first();
+    auditLog({ userId: req.user.id, action: "service.updated", targetType: "service", targetId: existing.id, details: { name: value.name }, ip: req.ip });
     res.json({ service: await serialize(req, row, { withCommands: true }) });
   } catch (err) {
     next(err);
@@ -183,8 +185,10 @@ router.put("/:id", async (req, res, next) => {
 
 router.delete("/:id", async (req, res, next) => {
   try {
+    const existing = await db("services").where({ id: req.params.id }).first();
     const deleted = await db("services").where({ id: req.params.id }).del();
     if (!deleted) return res.status(404).json({ error: "Service not found" });
+    auditLog({ userId: req.user.id, action: "service.deleted", targetType: "service", targetId: req.params.id, details: existing ? { name: existing.name } : null, ip: req.ip });
     res.json({ ok: true });
   } catch (err) {
     next(err);
@@ -201,6 +205,7 @@ router.post("/:id/sync", async (req, res, next) => {
       branch: req.body?.branch || null,
       ip: req.ip,
     });
+    auditLog({ userId: req.user.id, action: "service.manual_sync", targetType: "service", targetId: row.id, details: { triggerId }, ip: req.ip });
     res.status(202).json({ ok: true, triggerId });
   } catch (err) {
     next(err);
@@ -222,6 +227,7 @@ router.post("/:id/rollback", async (req, res, next) => {
       sha: targetSha,
       ip: req.ip,
     });
+    auditLog({ userId: req.user.id, action: "service.rollback", targetType: "service", targetId: row.id, details: { triggerId, targetSha: String(targetSha).slice(0, 12) }, ip: req.ip });
     res.status(202).json({ ok: true, triggerId, targetSha });
   } catch (err) {
     next(err);

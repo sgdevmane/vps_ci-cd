@@ -1,5 +1,6 @@
 <script>
-  import { LayoutDashboard, GitFork, Activity, Settings, Radio } from '@lucide/svelte';
+  import { LayoutDashboard, GitFork, Activity, Settings } from '@lucide/svelte';
+  import BrandMark from './BrandMark.svelte';
 
   let { page } = $props();
 
@@ -17,9 +18,7 @@
 
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-mark">
-      <Radio size={18} stroke-width={2.2} />
-    </div>
+    <BrandMark size={34} />
     <div>
       <div class="brand-name">VPS CI/CD</div>
       <div class="brand-sub">webhook deploy</div>

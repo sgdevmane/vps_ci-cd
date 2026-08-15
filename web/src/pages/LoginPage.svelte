@@ -1,8 +1,8 @@
 <script>
   import {
-    Radio, ArrowLeft, ShieldQuestion, KeyRound, Eye, EyeOff, Sun, Moon,
-    Sparkles, ShieldCheck, Zap, Server
+    ArrowLeft, ShieldQuestion, KeyRound, Eye, EyeOff, Sun, Moon,
   } from '@lucide/svelte';
+  import BrandMark from '../components/BrandMark.svelte';
   import { api } from '../lib/api.js';
   import { setUser } from '../lib/auth.svelte.js';
   import { theme, toggleTheme } from '../lib/theme.svelte.js';
@@ -103,9 +103,7 @@
 
   <div class="auth-card">
     <div class="auth-brand">
-      <div class="brand-mark">
-        <Radio size={22} stroke-width={2.2} />
-      </div>
+      <BrandMark size={46} />
       <div class="brand-name" style="font-size:18px;">VPS CI/CD</div>
     </div>
 

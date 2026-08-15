@@ -1,9 +1,8 @@
 # =============================================================================
 # VPS CI/CD — Production High-Availability Docker Compose Deployment
 # 2 Backend Instances + Nginx Reverse Proxy / Load Balancer + Prometheus + Grafana
+# Non-common host ports: web/API 19443 · Prometheus 19090 · Grafana 13000
 # =============================================================================
-
-version: '3.8'
 
 services:
   # Backend Instance 1
@@ -12,7 +11,8 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.server
     restart: always
-    environment:
+    stop_grace_period: 15s
+    environment: &backend_env
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
@@ -37,19 +37,8 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.server
     restart: always
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-      - HOST=0.0.0.0
-      - DATABASE_URL=${DATABASE_URL:-}
-      - PG_SSL=${PG_SSL:-false}
-      - DATA_DIR=/app/data
-      - SESSION_DAYS=${SESSION_DAYS:-7}
-      - COOKIE_SECURE=${COOKIE_SECURE:-false}
-      - DEFAULT_ADMIN_USER=${DEFAULT_ADMIN_USER:-admin}
-      - DEFAULT_ADMIN_PASS=${DEFAULT_ADMIN_PASS:-admin123}
-      - METRICS_ENABLED=${METRICS_ENABLED:-true}
-      - SWAGGER_ENABLED=${SWAGGER_ENABLED:-true}
+    stop_grace_period: 15s
+    environment: *backend_env
     volumes:
       - vps_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -62,11 +51,19 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.web
     restart: always
+    stop_grace_period: 15s
     ports:
       - "${PROD_PORT:-19443}:80"
     depends_on:
-      - backend-1
-      - backend-2
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:80/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - vps_internal_network
 
@@ -89,8 +86,8 @@ services:
     ports:
       - "${GRAFANA_PORT:-13000}:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro

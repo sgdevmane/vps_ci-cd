@@ -1,15 +1,35 @@
 {
   "info": {
-    "name": "VPS CI/CD Automation Runner API",
-    "description": "Comprehensive Postman Collection for VPS CI/CD with Auth, Services, Rollbacks, Env Vars, Notifications, Webhooks, and Telemetry.",
+    "name": "VPS CI/CD",
+    "description": "Webhook-driven git sync & automated deployment runner API. Sign in first \u2014 the session cookie is stored automatically by Postman.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:19443", "type": "string" },
-    { "key": "serviceId", "value": "1", "type": "string" },
-    { "key": "triggerId", "value": "1", "type": "string" },
-    { "key": "hookToken", "value": "03fe4862b5d4e12e", "type": "string" },
-    { "key": "channelId", "value": "1", "type": "string" }
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:19443",
+      "type": "string"
+    },
+    {
+      "key": "serviceId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "triggerId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "hookToken",
+      "value": "replace-with-hook-token",
+      "type": "string"
+    },
+    {
+      "key": "channelId",
+      "value": "1",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -20,10 +40,14 @@
           "request": {
             "method": "POST",
             "url": "{{baseUrl}}/api/auth/login",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         },
@@ -38,7 +62,71 @@
           "name": "Sign Out (Logout)",
           "request": {
             "method": "POST",
-            "url": "{{baseUrl}}/api/auth/logout"
+            "url": "{{baseUrl}}/api/auth/logout",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/change-password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"admin123\",\n  \"newPassword\": \"new-secure-pass\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get Security Question",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/security-question"
+          }
+        },
+        {
+          "name": "Reset Password (Security Question)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/reset-password",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": \"answer\",\n  \"newPassword\": \"new-secure-pass\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Set Security Question",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/auth/security-question",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Your question?\",\n  \"answer\": \"your answer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         }
       ]
@@ -58,10 +146,14 @@
           "request": {
             "method": "POST",
             "url": "{{baseUrl}}/api/services",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Frontend App\",\n  \"provider\": \"github\",\n  \"repo_url\": \"https://github.com/org/frontend.git\",\n  \"folder_path\": \"/var/www/frontend\",\n  \"branch_mode\": \"webhook\",\n  \"sync_mode\": \"pull\",\n  \"secret\": \"whsec_topsecret123\",\n  \"commands\": [\n    {\n      \"command\": \"npm ci && npm run build\",\n      \"continue_on_error\": false\n    }\n  ]\n}"
+              "raw": "{\n  \"name\": \"my-app\",\n  \"provider\": \"github\",\n  \"repo_url\": \"https://github.com/me/my-app.git\",\n  \"folder_path\": \"/var/www/my-app\",\n  \"branch_mode\": \"webhook\",\n  \"sync_mode\": \"pull\",\n  \"secret\": \"whhook-secret\",\n  \"enabled\": true,\n  \"commands\": [\n    {\n      \"command\": \"npm ci && npm run build\",\n      \"branch_filter\": \"main\",\n      \"continue_on_error\": false\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         },
@@ -73,12 +165,42 @@
           }
         },
         {
+          "name": "Update Service",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"my-app\",\n  \"provider\": \"github\",\n  \"repo_url\": \"https://github.com/me/my-app.git\",\n  \"folder_path\": \"/var/www/my-app\",\n  \"branch_mode\": \"webhook\",\n  \"sync_mode\": \"reset\",\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete Service",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}"
+          }
+        },
+        {
           "name": "Manual Sync / Deploy",
           "request": {
             "method": "POST",
             "url": "{{baseUrl}}/api/services/{{serviceId}}/sync",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"branch\": \"main\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -86,8 +208,15 @@
           "request": {
             "method": "POST",
             "url": "{{baseUrl}}/api/services/{{serviceId}}/rollback",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"targetSha\": \"a1b2c3d4e5f67890\"\n}" }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetSha\": \"a1b2c3d4e5f6\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           }
         },
         {
@@ -109,10 +238,77 @@
           "request": {
             "method": "PUT",
             "url": "{{baseUrl}}/api/services/{{serviceId}}/env",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"env\": [\n    { \"key\": \"PORT\", \"value\": \"3000\" },\n    { \"key\": \"API_KEY\", \"value\": \"secret_value_123\" }\n  ]\n}"
+              "raw": "{\n  \"env\": [\n    {\n      \"key\": \"API_TOKEN\",\n      \"value\": \"secret\",\n      \"is_secret\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get Service Notification Bindings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}/notifications"
+          }
+        },
+        {
+          "name": "Save Service Notification Bindings",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}/notifications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bindings\": [\n    {\n      \"channel_id\": 1,\n      \"on_start\": false,\n      \"on_success\": true,\n      \"on_failure\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Triggers & Activity",
+      "item": [
+        {
+          "name": "List Triggers",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/triggers?limit=40"
+          }
+        },
+        {
+          "name": "Get Trigger Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/triggers/{{triggerId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "Deliver Inbound Webhook",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/hooks/{{hookToken}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ref\": \"refs/heads/main\",\n  \"after\": \"0000000000000000000000000000000000000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         }
@@ -123,44 +319,158 @@
       "item": [
         {
           "name": "List Channels",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/notifications/channels" }
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/notifications/channels"
+          }
         },
         {
           "name": "Create Channel",
           "request": {
             "method": "POST",
             "url": "{{baseUrl}}/api/notifications/channels",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Slack DevOps\",\n  \"provider\": \"slack\",\n  \"webhook_url\": \"https://hooks.slack.com/services/T00/B00/X00\"\n}"
+              "raw": "{\n  \"name\": \"#devops\",\n  \"provider\": \"slack\",\n  \"webhook_url\": \"https://hooks.slack.com/services/...\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           }
         },
         {
+          "name": "Update Channel",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/notifications/channels/{{channelId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete Channel",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/notifications/channels/{{channelId}}"
+          }
+        },
+        {
           "name": "Test Channel Alert",
-          "request": { "method": "POST", "url": "{{baseUrl}}/api/notifications/channels/{{channelId}}/test" }
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/notifications/channels/{{channelId}}/test",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
         }
       ]
     },
     {
-      "name": "System & Telemetry",
+      "name": "Settings & System",
       "item": [
         {
+          "name": "Get Settings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/settings"
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/api/settings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"publicBaseUrl\": \"https://deploy.example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "System Health",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/system/health" }
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/system/health"
+          }
+        },
+        {
+          "name": "Security Audit Trail",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/system/audit?limit=100"
+          }
         },
         {
           "name": "Prometheus Metrics",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/metrics" }
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/metrics"
+          }
         },
         {
           "name": "Export Backup JSON",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/system/backup/export" }
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/system/backup/export"
+          }
+        },
+        {
+          "name": "Import Backup JSON",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/system/backup/import",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
         },
         {
           "name": "Status Badge SVG",
-          "request": { "method": "GET", "url": "{{baseUrl}}/api/badges/{{serviceId}}/status.svg" }
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/badges/{{serviceId}}/status.svg"
+          }
+        },
+        {
+          "name": "Status Badge JSON",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/badges/{{serviceId}}/status.json"
+          }
+        },
+        {
+          "name": "Liveness Health",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/health"
+          }
         }
       ]
     }

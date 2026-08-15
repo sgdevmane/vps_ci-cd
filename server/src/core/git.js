@@ -45,6 +45,56 @@ function resolveTargetBranch(service, hookBranch) {
  * Sync a service's folder with its repository.
  * Returns { branch, sha } actually checked out.
  */
+export async function rollbackService(service, targetSha, log) {
+  const folder = path.resolve(service.folder_path);
+  if (!fs.existsSync(path.join(folder, '.git'))) {
+    throw new GitError(`"${folder}" is not a git repository — nothing to roll back.`);
+  }
+
+  // Refresh remote refs (best effort — the commit usually exists locally already).
+  try {
+    const fetch = await runGit(['fetch', 'origin', '--prune'], folder);
+    if (fetch.stderr) log(fetch.stderr);
+  } catch {
+    /* offline / no remote — local history is still usable */
+  }
+
+  try {
+    await runGit(['cat-file', '-e', `${targetSha}^{commit}`], folder);
+  } catch {
+    throw new GitError(
+      `Commit ${String(targetSha).slice(0, 7)} was not found in the local repository. Sync the service at least once before rolling back.`,
+    );
+  }
+
+  const r = await runGit(['reset', '--hard', targetSha], folder);
+  log(r.stdout || `Reset working tree to ${String(targetSha).slice(0, 7)}`);
+
+  const sha = (await runGit(['rev-parse', 'HEAD'], folder)).stdout;
+  let branch = null;
+  try {
+    const cur = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], folder);
+    branch = cur.stdout === 'HEAD' ? null : cur.stdout;
+  } catch {
+    branch = null;
+  }
+  log(`Rolled back to ${sha.slice(0, 7)}${branch ? ` on branch "${branch}"` : ' (detached HEAD)'}`);
+  return { branch, sha };
+}
+
+/**
+ * Best-effort snapshot of the commit currently checked out in a folder.
+ * Returns null when the folder is not (yet) a git repository.
+ */
+export async function currentSha(folder) {
+  try {
+    if (!fs.existsSync(path.join(folder, '.git'))) return null;
+    return (await runGit(['rev-parse', 'HEAD'], folder)).stdout || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function syncService(service, hookBranch, log) {
   const folder = path.resolve(service.folder_path);
   let target = resolveTargetBranch(service, hookBranch);

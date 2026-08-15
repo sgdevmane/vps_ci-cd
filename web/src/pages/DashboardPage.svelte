@@ -19,6 +19,16 @@
   let showSimulator = $state(false);
   let activeSlide = $state(0);
   let slideTimer = null;
+  let parallax = $state({ x: 0, y: 0 });
+
+  // Subtle mouse-parallax for the hero carousel watermark layers.
+  function handleParallax(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    parallax = {
+      x: (e.clientX - rect.left) / Math.max(rect.width, 1) - 0.5,
+      y: (e.clientY - rect.top) / Math.max(rect.height, 1) - 0.5,
+    };
+  }
 
   const slides = [
     {
@@ -45,6 +55,7 @@
   ];
 
   const enabledCount = $derived(services.filter((s) => s.enabled).length);
+  const ActiveIcon = $derived(slides[activeSlide].icon);
   const recent = $derived(triggers.slice(0, 8));
   const finished = $derived(triggers.filter((t) => ['success', 'failed'].includes(t.status)));
   const successRate = $derived(
@@ -92,14 +103,36 @@
 {#if loading}
   <div style="display:grid; place-items:center; padding:80px;"><div class="spinner spinner-lg"></div></div>
 {:else}
-  <!-- Animated Highlight Carousel -->
-  <div class="carousel-card" style="background: {slides[activeSlide].gradient};">
-    <div class="carousel-content">
-      <div class="badge badge-accent carousel-badge">
-        <Sparkles size={12} /> {slides[activeSlide].badge}
+  <!-- Animated Highlight Carousel (auto-advancing, mouse parallax) -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="carousel-card"
+    style="background: {slides[activeSlide].gradient};"
+    onmousemove={handleParallax}
+    onmouseleave={() => (parallax = { x: 0, y: 0 })}
+  >
+    <div class="carousel-parallax" aria-hidden="true">
+      <div
+        class="parallax-icon"
+        style="transform: translate({parallax.x * 28}px, {parallax.y * 18}px);"
+      >
+        <ActiveIcon size={210} stroke-width={0.9} />
       </div>
-      <h2 class="carousel-title">{slides[activeSlide].title}</h2>
-      <p class="carousel-desc">{slides[activeSlide].desc}</p>
+      <div
+        class="parallax-glow"
+        style="transform: translate({parallax.x * -38}px, {parallax.y * -24}px);"
+      ></div>
+    </div>
+    <div class="carousel-content">
+      {#key activeSlide}
+        <div class="carousel-slide-in">
+          <div class="badge badge-accent carousel-badge">
+            <Sparkles size={12} /> {slides[activeSlide].badge}
+          </div>
+          <h2 class="carousel-title">{slides[activeSlide].title}</h2>
+          <p class="carousel-desc">{slides[activeSlide].desc}</p>
+        </div>
+      {/key}
       <div class="carousel-actions">
         <button class="btn btn-primary btn-sm" onclick={() => (showSimulator = true)}>
           <Play size={13} /> Simulate Webhook
@@ -107,7 +140,7 @@
         <button class="btn btn-ghost btn-sm" onclick={() => navigate('/services/new')}>
           <Plus size={13} /> Add New Service
         </button>
-        <a href="/api/docs" target="_blank" class="btn btn-ghost btn-sm" style="margin-left:auto;">
+        <a href="/api/docs" target="_blank" rel="noopener noreferrer" class="btn btn-ghost btn-sm" style="margin-left:auto;">
           Swagger API <ExternalLink size={12} />
         </a>
       </div>
@@ -202,7 +235,19 @@
         <table class="table" style="margin-top:12px;">
           <tbody>
             {#each recent as t (t.id)}
-              <tr class="row-click" onclick={() => navigate(`/activity/${t.id}`)}>
+              <tr
+                class="row-click"
+                role="link"
+                tabindex="0"
+                aria-label={`Open trigger #${t.id} for ${t.service_name}`}
+                onclick={() => navigate(`/activity/${t.id}`)}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    navigate(`/activity/${t.id}`);
+                  }
+                }}
+              >
                 <td style="width:110px;" class="faint small nowrap">{timeAgo(t.created_at)}</td>
                 <td>
                   <div class="cell-main">{t.service_name}</div>
@@ -288,8 +333,54 @@
     padding: 22px 26px;
     margin-bottom: 22px;
     box-shadow: var(--shadow);
-    transition: all 0.5s ease-in-out;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
     overflow: hidden;
+  }
+  .carousel-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.4);
+  }
+  .carousel-content {
+    position: relative;
+    z-index: 1;
+  }
+  .carousel-parallax {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .parallax-icon {
+    position: absolute;
+    right: -28px;
+    bottom: -46px;
+    color: var(--text);
+    opacity: 0.07;
+    transition: transform 0.25s ease-out;
+  }
+  .parallax-glow {
+    position: absolute;
+    top: -90px;
+    right: 8%;
+    width: 320px;
+    height: 320px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--accent-soft), transparent 70%);
+    filter: blur(12px);
+    transition: transform 0.3s ease-out;
+  }
+  .carousel-slide-in {
+    animation: carousel-slide-in 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+  @keyframes carousel-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(26px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
   }
   .carousel-badge {
     margin-bottom: 8px;

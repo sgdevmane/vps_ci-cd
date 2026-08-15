@@ -40,7 +40,7 @@
       fireConfetti({ count: 40 });
       toast(`Rollback queued to ${selectedSha.slice(0, 7)}`, 'success');
       onClose();
-      navigate(`/triggers/${res.triggerId}`);
+      navigate(`/activity/${res.triggerId}`);
     } catch (err) {
       toastError(err);
     } finally {

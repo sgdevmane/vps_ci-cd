@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import cookieParser from "cookie-parser";
 import { config } from "./config.js";
-import { migrate, isPostgres } from "./db/index.js";
+import { migrate, isPostgres, db, purgeExpiredSessions } from "./db/index.js";
 import { ensureDefaultAdmin } from "./auth/setup.js";
 import { metricsMiddleware, register } from "./core/metrics.js";
 import authRoutes from "./routes/auth.js";
@@ -18,10 +18,25 @@ import systemRoutes from "./routes/system.js";
 import hookRoutes from "./routes/hooks.js";
 import docsRoutes from "./routes/docs.js";
 
+const pkg = JSON.parse(
+  fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+);
+
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", true);
 app.use(cookieParser());
+
+// Baseline security headers (complemented by the Nginx layer in Docker deployments)
+app.use((req, res, next) => {
+  res.set({
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "SAMEORIGIN",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  });
+  next();
+});
 
 // Enable HTTP metrics collection
 if (config.metricsEnabled) {
@@ -55,7 +70,7 @@ app.get("/api/health", (req, res) =>
     ok: true,
     uptime: process.uptime(),
     dbEngine: isPostgres ? "postgresql" : "sqlite",
-    version: "1.0.0",
+    version: pkg.version,
   }),
 );
 
@@ -86,7 +101,7 @@ async function attachUi(httpServer) {
         root: webRoot,
         configFile: path.join(webRoot, "vite.config.js"),
         appType: "custom",
-        server: { middlewareMode: true, hmr: { server: httpServer } },
+        server: { middlewareMode: true, ws: { server: httpServer } },
       });
       app.use(vite.middlewares);
       return "dev UI (Vite middleware + HMR)";
@@ -114,6 +129,10 @@ async function attachUi(httpServer) {
 
 async function main() {
   await migrate();
+  await purgeExpiredSessions();
+  // Purge expired sessions every 6 hours to keep the sessions table lean.
+  const sessionPurgeTimer = setInterval(purgeExpiredSessions, 6 * 60 * 60 * 1000);
+  sessionPurgeTimer.unref?.();
   const admin = await ensureDefaultAdmin();
   const httpServer = http.createServer(app);
   const uiMode = await attachUi(httpServer);
@@ -146,6 +165,23 @@ async function main() {
     }
     console.log("");
   });
+
+  // --- graceful shutdown (SIGTERM from Docker / systemd / PM2) ---
+  let shuttingDown = false;
+  async function shutdown(signal) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n[info] ${signal} received — draining connections…`);
+    httpServer.close(() => {
+      db.destroy()
+        .catch(() => {})
+        .finally(() => process.exit(0));
+    });
+    // Force-exit if connections do not drain in time.
+    setTimeout(() => process.exit(0), 10_000).unref?.();
+  }
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 main().catch((err) => {

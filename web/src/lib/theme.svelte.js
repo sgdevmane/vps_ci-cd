@@ -1,8 +1,20 @@
 const STORAGE_KEY = 'vcid-theme';
 
+function preferredTheme() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+  } catch {
+    /* storage unavailable */
+  }
+  if (typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: light)').matches) {
+    return 'light';
+  }
+  return 'dark';
+}
+
 export const theme = $state({
-  current:
-    (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY)) || 'dark',
+  current: preferredTheme(),
 });
 
 export function applyTheme() {

@@ -8,6 +8,7 @@ import {
 } from "../auth/session.js";
 import { hashSecret, verifySecret, normalizeAnswer } from "../util/crypto.js";
 import { nowIso } from "../util/misc.js";
+import { auditLog } from "../core/audit.js";
 
 const router = Router();
 
@@ -72,10 +73,12 @@ router.post("/login", async (req, res, next) => {
     const user = await findUser(String(username).trim());
     if (!user || !verifySecret(password, user.password_hash)) {
       recordFailure(req);
+      auditLog({ action: 'auth.login_failed', targetType: 'user', targetId: String(username).slice(0, 64), ip: req.ip });
       return res.status(401).json({ error: "Invalid username or password" });
     }
     recordSuccess(req);
     await createSession(res, user.id);
+    auditLog({ userId: user.id, action: 'auth.login', targetType: 'user', targetId: user.id, ip: req.ip });
     res.json({
       username: user.username,
       mustChangePassword: !!user.must_change_password,
@@ -131,6 +134,7 @@ router.post("/change-password", requireAuth, async (req, res, next) => {
       });
     await destroyAllSessions(user.id);
     await createSession(res, user.id);
+    auditLog({ userId: user.id, action: 'auth.password_changed', targetType: 'user', targetId: user.id, ip: req.ip });
     res.json({ ok: true });
   } catch (err) {
     next(err);

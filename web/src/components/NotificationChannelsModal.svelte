@@ -1,6 +1,7 @@
 <script>
   import { X, Bell, Plus, Trash2, Send, Check } from '@lucide/svelte';
   import { api } from '../lib/api.js';
+  import ConfirmDialog from './ConfirmDialog.svelte';
   import { fireConfetti } from '../lib/confetti.js';
   import { toast, toastError } from '../lib/toast.svelte.js';
 
@@ -17,6 +18,8 @@
   let bot_token = $state('');
   let chat_id = $state('');
   let saving = $state(false);
+  let deletingChannel = $state(null);
+  let deleteBusy = $state(false);
 
   async function load() {
     try {
@@ -58,14 +61,17 @@
     }
   }
 
-  async function deleteChannel(id) {
-    if (!confirm('Are you sure you want to delete this notification channel?')) return;
+  async function confirmDeleteChannel() {
+    deleteBusy = true;
     try {
-      await api.delete(`/api/notifications/channels/${id}`);
+      await api.del(`/api/notifications/channels/${deletingChannel.id}`);
       toast('Channel removed', 'success');
-      load();
+      deletingChannel = null;
+      await load();
     } catch (err) {
       toastError(err);
+    } finally {
+      deleteBusy = false;
     }
   }
 
@@ -163,7 +169,7 @@
                 <button class="btn btn-sm" onclick={() => testChannel(ch.id)} title="Send test ping">
                   <Send size={12} /> Test
                 </button>
-                <button class="btn btn-sm btn-danger btn-icon" onclick={() => deleteChannel(ch.id)} title="Delete channel">
+                <button class="btn btn-sm btn-danger btn-icon" onclick={() => (deletingChannel = ch)} title="Delete channel">
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -178,3 +184,14 @@
     {/if}
   </div>
 </div>
+
+{#if deletingChannel}
+  <ConfirmDialog
+    title="Delete notification channel"
+    message={`Delete "${deletingChannel.name}"? Services bound to it will stop receiving deployment alerts.`}
+    confirmLabel="Delete channel"
+    busy={deleteBusy}
+    onConfirm={confirmDeleteChannel}
+    onClose={() => (deletingChannel = null)}
+  />
+{/if}

@@ -156,7 +156,7 @@
       const res = await api.post(`/api/services/${id}/sync`, {});
       fireConfetti({ count: 40 });
       toast('Sync enqueued', 'success');
-      navigate(`/triggers/${res.triggerId}`);
+      navigate(`/activity/${res.triggerId}`);
     } catch (e) {
       toastError(e);
     }
@@ -192,7 +192,7 @@
   async function doDelete() {
     deleteBusy = true;
     try {
-      await api.delete(`/api/services/${id}`);
+      await api.del(`/api/services/${id}`);
       toast('Service deleted', 'success');
       navigate('/services');
     } catch (e) {
@@ -312,6 +312,10 @@
         <label class="checkbox-line small muted">
           <input type="checkbox" bind:checked={form.auto_rollback} />
           Auto-rollback on deployment / healthcheck failure
+        </label>
+        <label class="checkbox-line small muted">
+          <input type="checkbox" bind:checked={form.maintenance_mode} />
+          Maintenance mode — suspend deployments (triggers complete as skipped)
         </label>
         <label class="checkbox-line small muted">
           <input type="checkbox" bind:checked={form.clone_if_empty} />

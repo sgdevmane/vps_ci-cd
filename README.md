@@ -61,8 +61,11 @@ flowchart LR
   - Sequential shell commands with `{branch}` and `{sha}` placeholder substitutions.
   - Per-command branch filtering and `continue-on-error` options.
 - **Outbound Notifications Hub**: Real-time deployment alert dispatching to **Slack**, **Discord Webhooks**, **Telegram Bots**, and **Custom JSON Webhooks**.
-- **Instant One-Click Rollbacks**: Browse git commit history and revert the repository and run deployment commands to previous stable commits.
-- **Healthcheck Guards & Auto-Rollback**: Automatic post-deployment HTTP endpoint probe that triggers auto-rollback if non-200 is returned.
+- **Instant One-Click Rollbacks**: Browse git commit history and revert the repository to any previous commit — deployment commands re-run automatically against the rolled-back tree.
+- **Healthcheck Guards & Auto-Rollback**: Automatic post-deployment HTTP endpoint probe. When enabled, a failing probe instantly reverts to the previously deployed commit, re-runs commands and re-verifies.
+- **Maintenance Mode**: Suspend a service's deployments without disabling its webhook — triggers complete as *skipped* with a clear audit note.
+- **Security Audit Trail**: Every sign-in, configuration change, rollback and recovery action is recorded in an append-only audit log, browsable in *Settings → Security Audit Trail*.
+- **Webhook Rate Limiting**: Inbound hooks are throttled per service + IP (120 req/min) with proper `429` + `Retry-After` responses to stop floods and signature brute-forcing.
 - **Encrypted Environment Variables**: AES-256-GCM authenticated encryption at rest for sensitive service-level environment variables.
 - **Dynamic Shields.io SVG Badges**: Live SVG deployment status badges (`/api/badges/:serviceId/status.svg`) for repository READMEs.
 - **System Health Telemetry**: Live CPU load, RAM usage, and disk capacity monitoring in the UI header and via `/api/system/health`.
@@ -167,8 +170,10 @@ npm run docker:staging:down
 | **Nginx Web & API Proxy** | Staging | `19444` | Staging Web UI, API, and Webhooks |
 | **Prometheus** | Production | `19090` | Telemetry Metrics Scraper |
 | **Prometheus** | Staging | `19091` | Staging Metrics Scraper |
-| **Grafana** | Production | `13000` | Monitoring Dashboards (login: `admin`/`admin`) |
+| **Grafana** | Production | `13000` | Monitoring Dashboards (login from `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`) |
 | **Grafana** | Staging | `13001` | Staging Monitoring Dashboards |
+
+> **Note (HA + SQLite):** the production stack runs two backend instances sharing one data volume. SQLite is hardened for this (WAL + busy-timeout), but for heavy multi-instance write loads a remote PostgreSQL `DATABASE_URL` is recommended.
 
 ---
 
@@ -275,6 +280,10 @@ Configure environment variables via `.env.production`, `.env.staging`, or `.env.
 | `PORT` | `3000` | Internal backend server listening port |
 | `PROD_PORT` | `19443` | Host port exposed by Nginx in production |
 | `STAGING_PORT` | `19444` | Host port exposed by Nginx in staging |
+| `PROMETHEUS_PORT` | `19090` / `19091` | Host port for Prometheus (prod / staging) |
+| `GRAFANA_PORT` | `13000` / `13001` | Host port for Grafana (prod / staging) |
+| `GRAFANA_ADMIN_USER` | `admin` | Grafana administrator username |
+| `GRAFANA_ADMIN_PASSWORD` | `change-me` | Grafana administrator password — **set this before deploying** |
 | `DATABASE_URL` | `""` | Remote PostgreSQL connection string (`postgres://user:pass@host:5432/db`) |
 | `PG_SSL` | `false` | Enable TLS/SSL for PostgreSQL connection |
 | `DATA_DIR` | `/app/data` | Directory for local data runtime files and SQLite storage |
@@ -329,14 +338,14 @@ npm run simulate:hook -- "http://localhost:19443/api/hooks/<token>" \
 
 ## 🔄 Trigger Execution Lifecycle
 
-1. **Verification**: Inbound HMAC signature / secret token is verified (mismatches are stored as *rejected* and answered `401`).
+1. **Verification**: Inbound HMAC signature / secret token is verified (mismatches are stored as *rejected* and answered `401`). Requests are rate-limited per service + IP (120/min → `429`).
 2. **Event Filter**: Non-push events are stored as *skipped*.
 3. **Branch Filter**: Pushed branch is checked against the configured allowed list.
 4. **Queue Serialization**: Run is queued — one run per service at a time; if a run is already active, latest pending trigger wins.
-5. **Git Sync**: `git fetch` → checkout target branch → `pull --ff-only` or `reset --hard origin/<branch>` (auto-clones if folder is empty).
+5. **Git Sync**: `git fetch` → checkout target branch → `pull --ff-only` or `reset --hard origin/<branch>` (auto-clones if folder is empty). Rollback triggers instead `reset --hard <commit>`.
 6. **Encrypted Env Injection**: Decrypts service environment variables and injects them into process execution.
 7. **Command Pipeline**: Runs configured commands sequentially, streaming log chunks in real-time via SSE.
-8. **Healthcheck Probe**: Probes `healthcheck_url` (if set) and triggers auto-rollback if failure occurs.
+8. **Healthcheck Probe & Auto-Rollback**: Probes `healthcheck_url` (if set). On failure with *auto-rollback* enabled, the service reverts to the previously deployed commit, re-runs the command pipeline and re-verifies.
 9. **Notifications Dispatch**: Dispatches alerts to Slack, Discord, Telegram, and Webhook channels.
 
 ---
@@ -362,28 +371,33 @@ Import [`vps-ci-cd.postman_collection.json`](file:///Users/mctavish/github/vps_c
 
 ```
 server/src/
-  index.js            # Express app, static UI middleware, boot
+  index.js            # Express app, static UI middleware, boot, graceful shutdown
   config.js           # Environment-driven configuration
   db/                 # Knex instance, migrations (SQLite & PostgreSQL)
   auth/               # Sessions, first-boot admin, password reset
   routes/             # Auth, services, triggers, notifications, badges, system, settings, hooks
-  core/               # Git engine, command runner, SSE hub, notifications, crypto vault, metrics, systemInfo
+  core/               # Git engine, command runner, SSE hub, notifications, crypto vault,
+                      #   metrics, systemInfo, audit trail
   webhooks/           # Signature verification + payload parsing
 web/src/
   App.svelte          # Auth gate, shell, router
-  components/         # Modals (Simulator, Rollback, Badges, Notifications), status badges, log viewer, header
-  pages/              # Login, dashboard, services, editor, activity, settings
+  components/         # BrandMark, modals (Simulator, Rollback, Badges, Notifications),
+                      #   status badges, log viewer, header, sidebar
+  pages/              # Login, dashboard (parallax carousel), services, editor, activity, settings
 deploy/
-  Dockerfile.server   # Node 20 slim container with git & ssh
+  Dockerfile.server   # Multi-stage Node 20 container with git & ssh (prod-deps only)
   Dockerfile.web      # Vite build + Alpine Nginx container
-  nginx/              # Load balancer configuration
-  prometheus/         # Prometheus scrape configuration
-  grafana/            # Provisioned datasource and dashboards
+  nginx/              # Load balancer configuration (keepalive, SSE-friendly)
+  prometheus/         # Prometheus scrape configs (production + staging)
+  grafana/            # Provisioned datasources and dashboards (prod + staging variants)
   vps-ci-cd.service   # systemd unit
   ecosystem.config.cjs# PM2 configuration
 scripts/
   vps-cli.mjs         # Standalone developer CLI companion tool
   simulate-webhook.mjs# Webhook simulation test helper
+  lint-server.mjs     # Server source syntax linting
+public assets
+  favicon.svg / logo.svg / logo.png / apple-touch-icon.png / og-image.png
 ```
 
 ---
@@ -395,6 +409,10 @@ scripts/
 3. **Use Webhook Secrets**: Configure strong random secrets on each service.
 4. **Encrypted Environment Variables**: Store database passwords and API tokens in the service Environment Variables vault (encrypted with AES-256-GCM).
 5. **HTTPS / TLS Reverse Proxy**: Set `COOKIE_SECURE=true` when terminating TLS with Nginx or Cloudflare.
+6. **Harden the Observability Stack**: Set `GRAFANA_ADMIN_PASSWORD` before deploying, and consider firewalling the Prometheus/Grafana ports (`19090`/`13000`) to trusted networks.
+7. **Audit Trail**: Review *Settings → Security Audit Trail* for sign-ins, failed logins, configuration changes, and rollback actions.
+8. **Defense in Depth (Nginx layer)**: `server_tokens off`, strict security headers (`X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`), and per-service webhook rate limiting.
+9. **Graceful Shutdown & Session Hygiene**: SIGTERM-safe draining on redeploy; expired sessions are purged every 6 hours.
 
 ---
 

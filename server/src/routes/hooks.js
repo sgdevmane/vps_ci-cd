@@ -7,6 +7,27 @@ import { webhooksReceivedTotal } from "../core/metrics.js";
 
 const router = Router();
 
+// --- simple in-memory rate limiter (per service + client IP) ---
+// Protects the public hook endpoint from floods / brute-force signature probing.
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_PER_WINDOW = 120;
+const rateBuckets = new Map(); // key -> { count, resetAt }
+
+function rateLimitCheck(key) {
+  const now = Date.now();
+  if (rateBuckets.size > 10_000) rateBuckets.clear(); // safety valve against unbounded growth
+  let bucket = rateBuckets.get(key);
+  if (!bucket || now > bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + RATE_WINDOW_MS };
+    rateBuckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  return {
+    allowed: bucket.count <= RATE_MAX_PER_WINDOW,
+    retryAfterSec: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+  };
+}
+
 function logText(...messages) {
   return messages.map((m) => `[${nowIso()}] ${m}`).join("\n");
 }
@@ -36,6 +57,19 @@ router.post("/hooks/:hookToken", async (req, res, next) => {
       .where({ hook_token: req.params.hookToken })
       .first();
     if (!service) return res.status(404).json({ error: "Unknown webhook" });
+
+    const rl = rateLimitCheck(`${service.id}:${req.ip || "unknown"}`);
+    if (!rl.allowed) {
+      webhooksReceivedTotal.inc({
+        provider: service.provider,
+        verified: "throttled",
+        status: "rate_limited",
+      });
+      res.set("Retry-After", String(rl.retryAfterSec));
+      return res
+        .status(429)
+        .json({ error: `Rate limit exceeded — try again in ${rl.retryAfterSec}s` });
+    }
 
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from("");
     let payload = {};

@@ -97,3 +97,30 @@ export function broadcastTriggerStatus(triggerId, status, extra = {}) {
     }
   }
 }
+
+/**
+ * Periodic heartbeat comment/ping sent to every connected SSE client.
+ * Keeps connections alive through Nginx / reverse proxies / load balancers
+ * that would otherwise close idle connections.
+ */
+const HEARTBEAT_MS = 25_000;
+const heartbeatTimer = setInterval(() => {
+  const ping = `event: ping\ndata: ${JSON.stringify({ ts: new Date().toISOString() })}\n\n`;
+  for (const set of triggerClients.values()) {
+    for (const client of set) {
+      try {
+        client.write(ping);
+      } catch {
+        set.delete(client);
+      }
+    }
+  }
+  for (const client of globalClients) {
+    try {
+      client.write(ping);
+    } catch {
+      globalClients.delete(client);
+    }
+  }
+}, HEARTBEAT_MS);
+heartbeatTimer.unref?.();

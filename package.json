@@ -1,6 +1,6 @@
 {
   "name": "vps-ci-cd",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Webhook-driven git sync & deploy runner for your VPS",
   "workspaces": [
@@ -11,11 +11,13 @@
     "dev": "npm run dev -w server",
     "build": "npm run build -w web",
     "start": "NODE_ENV=production node server/src/index.js",
-    "lint": "node --check server/src/index.js && npm run build -w web",
+    "lint": "node scripts/lint-server.mjs && npm run check -w web",
+    "check": "npm run lint",
     "simulate:hook": "node scripts/simulate-webhook.mjs",
     "docker:prod:up": "docker compose --env-file .env.production up -d --build",
     "docker:prod:down": "docker compose --env-file .env.production down",
     "docker:prod:logs": "docker compose --env-file .env.production logs -f",
+    "docker:prod:redeploy": "docker compose --env-file .env.production up -d --build --force-recreate",
     "docker:staging:up": "docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build",
     "docker:staging:down": "docker compose -f docker-compose.staging.yml --env-file .env.staging down",
     "docker:staging:logs": "docker compose -f docker-compose.staging.yml --env-file .env.staging logs -f"

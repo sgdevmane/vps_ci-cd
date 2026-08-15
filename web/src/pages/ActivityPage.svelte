@@ -87,7 +87,19 @@
       </thead>
       <tbody>
         {#each triggers as t (t.id)}
-          <tr class="row-click" onclick={() => navigate(`/activity/${t.id}`)}>
+          <tr
+            class="row-click"
+            role="link"
+            tabindex="0"
+            aria-label={`Open trigger #${t.id} for ${t.service_name}`}
+            onclick={() => navigate(`/activity/${t.id}`)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                navigate(`/activity/${t.id}`);
+              }
+            }}
+          >
             <td class="small muted nowrap">{formatDateTime(t.created_at)}</td>
             <td class="cell-main">{t.service_name}</td>
             <td>

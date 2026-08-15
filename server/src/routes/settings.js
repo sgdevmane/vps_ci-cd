@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../auth/session.js';
 import { getSetting, putSetting, baseUrlFor } from '../core/appSettings.js';
+import { auditLog } from '../core/audit.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -25,6 +26,7 @@ router.put('/', async (req, res, next) => {
     }
     await putSetting('public_base_url', String(publicBaseUrl || '').trim());
     const stored = await getSetting('public_base_url');
+    auditLog({ userId: req.user.id, action: 'settings.updated', targetType: 'setting', targetId: 'public_base_url', details: { value: stored || '' }, ip: req.ip });
     res.json({ publicBaseUrl: stored || '', effectiveBaseUrl: baseUrlFor(req, stored) });
   } catch (err) {
     next(err);

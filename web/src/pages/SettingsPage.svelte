@@ -1,12 +1,13 @@
 <script>
   import {
     KeyRound, ShieldQuestion, Globe, Save, ExternalLink, Activity, BookOpen,
-    Bell, Download, Upload, Server,
+    Bell, Download, Upload, Server, ScrollText, RefreshCw,
   } from '@lucide/svelte';
   import { api } from '../lib/api.js';
   import ChangePasswordModal from '../components/ChangePasswordModal.svelte';
   import NotificationChannelsModal from '../components/NotificationChannelsModal.svelte';
   import { fireConfetti } from '../lib/confetti.js';
+  import { formatDateTime } from '../lib/format.js';
   import { toast, toastError } from '../lib/toast.svelte.js';
 
   let me = $state(null);
@@ -24,6 +25,9 @@
   let fileInputRef;
   let importBusy = $state(false);
 
+  let auditLogs = $state([]);
+  let auditLoading = $state(false);
+
   async function load() {
     try {
       const [authMe, settings] = await Promise.all([
@@ -38,8 +42,21 @@
     }
   }
 
+  async function loadAudit() {
+    auditLoading = true;
+    try {
+      const res = await api.get('/api/system/audit?limit=50');
+      auditLogs = res.logs || [];
+    } catch (e) {
+      toastError(e);
+    } finally {
+      auditLoading = false;
+    }
+  }
+
   $effect(() => {
     load();
+    loadAudit();
   });
 
   async function saveQuestion(e) {
@@ -94,6 +111,33 @@
     }
   }
 </script>
+
+<div class="card">
+  <div class="section-title"><ScrollText size={13} /> Security Audit Trail</div>
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+    <div class="small muted">Every sign-in, configuration change, deployment and recovery action is recorded here.</div>
+    <button class="btn btn-sm" onclick={loadAudit} disabled={auditLoading}>
+      {#if auditLoading}<span class="spinner"></span>{:else}<RefreshCw size={13} />{/if}
+      Refresh
+    </button>
+  </div>
+  {#if auditLogs.length === 0}
+    <div class="small muted" style="padding:14px 0; text-align:center;">No audit events recorded yet.</div>
+  {:else}
+    <div class="audit-list">
+      {#each auditLogs as entry (entry.id)}
+        <div class="audit-row">
+          <span class="badge badge-muted mono" style="font-size:10.5px;">{entry.action}</span>
+          <span class="small" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            {entry.details || `${entry.target_type ?? ''}${entry.target_id ? ' #' + entry.target_id : ''}`}
+          </span>
+          <span class="small faint nowrap" title={entry.ip || ''}>{entry.ip || '—'}</span>
+          <span class="small faint nowrap">{formatDateTime(entry.created_at)}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+</div>
 
 <div class="card">
   <div class="section-title"><KeyRound size={13} /> Password</div>
@@ -211,3 +255,34 @@
 {#if notifModal}
   <NotificationChannelsModal onClose={() => (notifModal = false)} />
 {/if}
+
+<style>
+  .audit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .audit-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    transition: border-color 0.14s ease, background 0.14s ease;
+  }
+  .audit-row:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-elevated);
+  }
+  @media (max-width: 720px) {
+    .audit-row {
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+  }
+</style>

@@ -130,6 +130,9 @@
               <div class="cell-main" style="display:flex; align-items:center; gap:8px;">
                 <ProviderIcon provider={s.provider} withLabel={false} />
                 <a href={`#/services/${s.id}`} style="color:inherit;">{s.name}</a>
+                {#if s.maintenance_mode}
+                  <span class="badge badge-warning" title="Deployments suspended">maintenance</span>
+                {/if}
               </div>
               <div class="cell-sub">{s.repo_url}</div>
             </td>

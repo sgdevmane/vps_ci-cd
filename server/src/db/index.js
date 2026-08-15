@@ -29,7 +29,30 @@ const knexConfig = isPostgres
 export const db = knex(knexConfig);
 
 export async function migrate() {
+  if (!isPostgres) {
+    // Harden SQLite for multi-process deployments (two backend containers
+    // sharing one volume): wait instead of erroring on contention and enable
+    // WAL so readers never block the writer.
+    for (const pragma of ['PRAGMA busy_timeout = 5000', 'PRAGMA journal_mode = WAL', 'PRAGMA foreign_keys = ON']) {
+      try {
+        await db.raw(pragma);
+      } catch {
+        /* non-fatal — best effort hardening */
+      }
+    }
+  }
   await db.migrate.latest();
+}
+
+/**
+ * Remove expired sessions from the database. Called on boot and periodically.
+ */
+export async function purgeExpiredSessions() {
+  try {
+    await db('sessions').where('expires_at', '<=', new Date().toISOString()).del();
+  } catch {
+    /* non-fatal */
+  }
 }
 
 export async function insertReturning(table, data) {

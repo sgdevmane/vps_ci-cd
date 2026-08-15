@@ -1,5 +1,6 @@
+import path from 'node:path';
 import { db, insertReturning } from '../db/index.js';
-import { syncService } from './git.js';
+import { syncService, rollbackService, currentSha } from './git.js';
 import { execCommand } from './exec.js';
 import { nowIso, parseList, indent } from '../util/misc.js';
 import { activeSyncs, syncDuration, triggersTotal } from './metrics.js';
@@ -98,6 +99,50 @@ async function checkHealth(url, timeoutMs = 8000) {
   }
 }
 
+/**
+ * Run the ordered post-sync command pipeline for a service.
+ * Returns { ok, errorMessage }.
+ */
+async function executeCommandPipeline({ serviceId, triggerId, service, branch, sha, customEnv, log }) {
+  const commands = await db('commands')
+    .where({ service_id: serviceId })
+    .orderBy('position', 'asc')
+    .orderBy('id', 'asc');
+  const matching = commands.filter(
+    (c) => !c.branch_filter || parseList(c.branch_filter).includes(branch || ''),
+  );
+  if (matching.length === 0) {
+    log(
+      commands.length === 0
+        ? 'No commands configured for this service.'
+        : `No commands match branch "${branch || '—'}" — nothing to run.`,
+    );
+    return { ok: true, errorMessage: '' };
+  }
+
+  for (const c of matching) {
+    const command = substitutePlaceholders(c.command, { branch: branch || '', sha: sha || '' });
+    if (c.branch_filter) log(`Running (branch filter "${c.branch_filter}"):`);
+    log(`$ ${command}`);
+    const { code, output } = await execCommand(
+      command,
+      service.folder_path,
+      customEnv,
+      (chunk) => broadcastLogChunk(triggerId, chunk),
+    );
+    if (output.trim()) log(indent(output.replace(/\s+$/, '')));
+    if (code !== 0) {
+      log(`Command exited with code ${code}.`);
+      if (c.continue_on_error) {
+        log('"Continue on error" is enabled — moving to the next command.');
+        continue;
+      }
+      return { ok: false, errorMessage: `Command failed with exit code ${code}` };
+    }
+  }
+  return { ok: true, errorMessage: '' };
+}
+
 async function runTrigger(serviceId, triggerId) {
   const [service, trigger] = await Promise.all([
     db('services').where({ id: serviceId }).first(),
@@ -142,54 +187,70 @@ async function runTrigger(serviceId, triggerId) {
     if (!service.enabled) {
       status = 'skipped';
       log('Service is disabled — nothing to do.');
+    } else if (service.maintenance_mode) {
+      status = 'skipped';
+      log('Maintenance mode is enabled for this service — deployments are suspended, nothing to do.');
     } else {
       const customEnv = await fetchServiceEnv(serviceId);
-      const { branch, sha } = await syncService(service, trigger.branch, log);
-      syncedSha = sha;
-      syncedBranch = branch;
-      log(`Repository synced — branch "${branch}" @ ${String(sha).slice(0, 7)}`);
+      const folder = path.resolve(service.folder_path);
+      // Snapshot the commit deployed *before* this run — used for auto-rollback.
+      const preDeploySha = trigger.source === 'rollback' ? null : await currentSha(folder);
 
-      const commands = await db('commands')
-        .where({ service_id: serviceId })
-        .orderBy('position', 'asc')
-        .orderBy('id', 'asc');
-      const matching = commands.filter(
-        (c) => !c.branch_filter || parseList(c.branch_filter).includes(branch),
-      );
-      if (matching.length === 0) {
-        log(commands.length === 0 ? 'No commands configured for this service.' : `No commands match branch "${branch}" — done.`);
-      }
-      for (const c of matching) {
-        const command = substitutePlaceholders(c.command, { branch, sha });
-        if (c.branch_filter) log(`Running (branch filter "${c.branch_filter}"):`);
-        log(`$ ${command}`);
-        const { code, output } = await execCommand(
-          command,
-          service.folder_path,
-          customEnv,
-          (chunk) => broadcastLogChunk(triggerId, chunk)
-        );
-        if (output.trim()) log(indent(output.replace(/\s+$/, '')));
-        if (code !== 0) {
-          log(`Command exited with code ${code}.`);
-          if (c.continue_on_error) {
-            log('"Continue on error" is enabled — moving to the next command.');
-            continue;
-          }
-          status = 'failed';
-          errorMessage = `Command failed with exit code ${code}`;
-          break;
-        }
+      if (trigger.source === 'rollback' && trigger.sha) {
+        log(`Rollback run — target commit ${String(trigger.sha).slice(0, 12)}`);
+        const rb = await rollbackService(service, trigger.sha, log);
+        syncedSha = rb.sha;
+        syncedBranch = rb.branch || syncedBranch;
+        log(`Repository rolled back — ${rb.branch ? `branch "${rb.branch}"` : 'detached HEAD'} @ ${String(rb.sha).slice(0, 7)}`);
+      } else {
+        const { branch, sha } = await syncService(service, trigger.branch, log);
+        syncedSha = sha;
+        syncedBranch = branch;
+        log(`Repository synced — branch "${branch}" @ ${String(sha).slice(0, 7)}`);
       }
 
-      // Post-sync healthcheck validation
+      const run = await executeCommandPipeline({
+        serviceId, triggerId, service, branch: syncedBranch, sha: syncedSha, customEnv, log,
+      });
+      if (!run.ok) {
+        status = 'failed';
+        errorMessage = run.errorMessage;
+      }
+
+      // Post-sync healthcheck validation with optional automatic rollback.
       if (status === 'success' && service.healthcheck_url) {
         log(`Verifying healthcheck endpoint: ${service.healthcheck_url}`);
         const healthy = await checkHealth(service.healthcheck_url);
         if (!healthy) {
-          status = 'failed';
-          errorMessage = `Healthcheck failed on ${service.healthcheck_url}`;
           log(`ERROR: Healthcheck probe failed at ${service.healthcheck_url}`);
+          if (service.auto_rollback && trigger.source !== 'rollback' && preDeploySha) {
+            log(`Auto-rollback is enabled — reverting "${service.name}" to ${preDeploySha.slice(0, 7)} and re-running deployment commands.`);
+            try {
+              const rb = await rollbackService(service, preDeploySha, log);
+              syncedSha = rb.sha;
+              const rerun = await executeCommandPipeline({
+                serviceId, triggerId, service, branch: syncedBranch, sha: rb.sha, customEnv, log,
+              });
+              if (!rerun.ok) {
+                status = 'failed';
+                errorMessage = `Auto-rollback executed, but re-deployment failed: ${rerun.errorMessage}`;
+                log(`ERROR: ${errorMessage}`);
+              } else if (await checkHealth(service.healthcheck_url)) {
+                log('Healthcheck passed after auto-rollback — service recovered on the previous commit.');
+              } else {
+                status = 'failed';
+                errorMessage = `Healthcheck failed even after auto-rollback to ${preDeploySha.slice(0, 7)}`;
+                log(`ERROR: ${errorMessage}`);
+              }
+            } catch (rbErr) {
+              status = 'failed';
+              errorMessage = `Auto-rollback failed: ${rbErr.message}`;
+              log(`ERROR: ${errorMessage}`);
+            }
+          } else {
+            status = 'failed';
+            errorMessage = `Healthcheck failed on ${service.healthcheck_url}`;
+          }
         } else {
           log('Healthcheck probe passed successfully.');
         }
@@ -229,13 +290,15 @@ async function runTrigger(serviceId, triggerId) {
 
   broadcastTriggerStatus(triggerId, status, { service_id: serviceId, duration_ms: durationMs });
 
-  // Dispatch Success or Failure Notifications
-  dispatchNotifications(serviceId, status, {
-    serviceName: service.name,
-    branch: syncedBranch,
-    sha: syncedSha,
-    durationMs,
-    error: errorMessage || null,
-    triggerId,
-  }).catch(() => {});
+  // Dispatch Success or Failure Notifications (start events are dispatched in-run)
+  if (status === 'success' || status === 'failed') {
+    dispatchNotifications(serviceId, status, {
+      serviceName: service.name,
+      branch: syncedBranch,
+      sha: syncedSha,
+      durationMs,
+      error: errorMessage || null,
+      triggerId,
+    }).catch(() => {});
+  }
 }
