@@ -1,220 +1,224 @@
 # VPS CI/CD
 
-A self-hosted, webhook-driven sync & deploy runner for your VPS. Point GitHub, GitLab, Bitbucket, Gitea/Forgejo, Gogs (or any webhook source) at one URL; when you push, the bound folder on the server syncs to the right branch and your post-sync commands run — with every run fully logged in a clean web panel.
+<div align="center">
+
+![VPS CI/CD Logo](/web/public/logo.png)
+
+**Self-hosted, high-availability, webhook-driven git sync & automated deployment runner for your VPS.**
+
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+[![Svelte 5](https://img.shields.io/badge/frontend-svelte_5-ff3e00.svg)](https://svelte.dev)
+[![Docker](https://img.shields.io/badge/docker-ready-2496ed.svg)](https://www.docker.com/)
+[![PostgreSQL](https://img.shields.io/badge/database-postgresql_%7C_sqlite-336791.svg)](https://www.postgresql.org)
+[![Prometheus](https://img.shields.io/badge/metrics-prometheus-e6522c.svg)](https://prometheus.io)
+[![Swagger](https://img.shields.io/badge/docs-openapi_3.0-85ea2d.svg)](http://localhost:19443/api/docs)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+</div>
+
+---
+
+## 🚀 Overview
+
+VPS CI/CD bridges your git hosting providers (GitHub, GitLab, Bitbucket, Gitea, Forgejo, Gogs, or generic curl/POST webhooks) directly to your server file system. When code is pushed to your repositories:
+
+1. Inbound webhook arrives with cryptographic signature verification (HMAC-SHA256).
+2. The bound directory on your server is cloned or fast-forwarded/hard-reset to match the remote branch.
+3. Ordered post-sync shell commands execute sequentially (e.g., container builds, asset compilation, service restarts).
+4. Output and execution telemetry are recorded with real-time logs, Prometheus metrics, and status badges.
+
+```mermaid
+flowchart LR
+    A[Git Push] --> B[Inbound Webhook]
+    B --> C{Verify HMAC / Token}
+    C -->|Valid| D[Git Sync / Clone]
+    C -->|Invalid| X[Rejected & Logged]
+    D --> E[Run Post-Sync Commands]
+    E --> F[Prometheus Telemetry]
+    E --> G[Live UI Dashboard]
+```
+
+---
+
+## ✨ Features
+
+- **High Availability & Zero-Downtime Deployment**
+  - Multi-instance backend cluster (`backend-1` and `backend-2`) behind an Nginx load balancer.
+  - Healthcheck failover and least-connection load distribution.
+- **Dual Database Architecture**
+  - **Remote PostgreSQL**: Configure `DATABASE_URL` to connect to cloud or private PostgreSQL databases with connection pooling.
+  - **Zero-Config SQLite**: Built-in `better-sqlite3` storage for single-node local runs.
+  - **Schema Init Script**: [`init.sql`](file:///Users/mctavish/github/vps_ci-cd/init.sql) provided for bootstrapping fresh PostgreSQL databases.
+- **Universal Git Webhook Engine**
+  - Native HMAC signature verification for **GitHub** (`X-Hub-Signature-256`), **GitLab** (`X-Gitlab-Token`), **Gitea / Forgejo** (`X-Gitea-Signature`), **Gogs** (`X-Gogs-Signature`), **Bitbucket** token checks, and **Generic** endpoints.
+- **Branch Routing Strategies**
+  - _Follow webhook branch_: Dynamic branch tracking.
+  - _Fixed branch_: Always synchronize to a designated branch (e.g. `main` or `production`).
+  - _Current branch_: Keep whatever branch is checked out and pull latest changes.
+  - _Allowed branch filter_: Restrict builds to specific branches (e.g. `main, staging`).
+- **Post-Sync Command Pipeline**
+  - Parameterized commands with `{branch}` and `{sha}` placeholder substitutions.
+  - Per-command branch filters and optional `continue-on-error` execution flags.
+- **In-App Webhook Simulator & Confetti**
+  - Test and debug webhook payloads directly from the browser panel before configuring provider settings.
+  - Celebratory visual feedback on successful manual triggers, service creations, and deployments.
+- **Full Observability & Developer API**
+  - **Prometheus Metrics**: Exported at `/api/metrics` with request counts, active deployments, and latency histograms.
+  - **Grafana Dashboard**: Auto-provisioned overview dashboard visualizing deployment health and server performance.
+  - **Interactive Swagger UI**: OpenAPI 3.0 interactive documentation at `/api/docs`.
+  - **Postman Collection**: [`vps-ci-cd.postman_collection.json`](file:///Users/mctavish/github/vps_ci-cd/vps-ci-cd.postman_collection.json) importable for external systems.
+
+---
+
+## 🏗️ Architecture
 
 ```
-push to main ──▶ webhook ──▶ verify secret ──▶ git sync folder ──▶ run commands ──▶ logged
+                                  ┌───────────────────────────┐
+                                  │   Nginx Reverse Proxy     │
+                                  │   (Host Port: 19443)      │
+                                  └─────────────┬─────────────┘
+                                                │
+                       ┌────────────────────────┴────────────────────────┐
+                       ▼                                                 ▼
+        ┌─────────────────────────────┐                   ┌─────────────────────────────┐
+        │      Backend Instance 1     │                   │      Backend Instance 2     │
+        │      (Port: 3000 Internal)  │                   │      (Port: 3000 Internal)  │
+        └──────────────┬──────────────┘                   └──────────────┬──────────────┘
+                       │                                                 │
+                       └────────────────────────┬────────────────────────┘
+                                                │
+                       ┌────────────────────────┴────────────────────────┐
+                       ▼                                                 ▼
+        ┌─────────────────────────────┐                   ┌─────────────────────────────┐
+        │   Prometheus & Grafana      │                   │     Remote PostgreSQL DB    │
+        │   (Ports: 19090 / 13000)    │                   │   (or SQLite app.db)        │
+        └─────────────────────────────┘                   └─────────────────────────────┘
 ```
 
-## Features
+---
 
-- **Multiple sync services** — bind any folder on the server (anywhere) to any repo. Mix GitHub, GitLab, Bitbucket, Gitea/Forgejo, Gogs and generic webhook sources freely.
-- **Branch control per service**
-  - _Follow webhook branch_ — a push to `staging` checks out `staging`, a push to `main` checks out `main`.
-  - _Fixed branch_ — the folder always switches to one configured branch.
-  - _Stay on current branch_ — never switch, only refresh.
-  - Optional **allowed-branches list** (e.g. `main, staging`); other pushes are logged as _skipped_.
-- **Sync modes** — `pull` (fast-forward, default) or `reset` (hard-reset to the remote branch), per service.
-- **Auto-clone** — if the folder is empty / not a repository yet, the repo is cloned on first trigger.
-- **Post-sync commands** — ordered shell commands run in the folder after a successful sync.
-  - `{branch}` and `{sha}` placeholders, e.g. `npm run docker:{branch}:up`.
-  - Optional per-command **branch filter** (run only when the synced branch matches).
-  - Optional **continue-on-error** per command.
-- **Webhook secrets** — per-provider verification, timing-safe: GitHub `X-Hub-Signature-256` (HMAC SHA-256), GitLab `X-Gitlab-Token`, Gitea/Forgejo `X-Gitea-Signature` / `X-Forgejo-Signature` (HMAC), Gogs `X-Gogs-Signature` (HMAC), Bitbucket optional `?token=` (Bitbucket Cloud doesn't sign), or a generic token header / `?token=` query param.
-- **Trigger history** — every webhook (accepted, skipped, rejected) and manual run is stored with a full timestamped log (git output + command output), viewable in the panel.
-- **Auth** — single admin account with default credentials (change after login, no registration), session cookies, login throttling, and **password reset via security question**.
-- **UI** — Svelte SPA, dark/light theme, sidebar + header layout, responsive.
-- **SQLite today, PostgreSQL later** — data access goes through Knex; switching is a client + connection change.
+## 📦 Quick Start & Local Run
 
-## Requirements
-
+### Prerequisites
 - Node.js ≥ 20
-- `git` available to the user running the server (SSH repos need a usable key for that user)
-
-## Quick start
+- `git` installed on host / server
 
 ```bash
-npm install          # installs server + web workspaces
-npm run build        # builds the Svelte UI into web/dist
-npm start            # boots the server — API + UI on one port
-```
+# 1. Install workspace dependencies
+npm install
 
-The startup banner prints the port. Without a `PORT` env var, a random 5-digit port is chosen on first boot and remembered in `data/runtime.json` (so webhook URLs stay stable). Open `http://your-vps:<port>` and sign in with the default credentials:
+# 2. Build Svelte frontend
+npm run build
 
-```
-username: admin
-password: admin123
-```
-
-You'll be asked to set your own password on first login. Then set a **security question** in _Settings_ — it is the only password-recovery path.
-
-Development mode — same single port, with Svelte hot reload (Vite runs as middleware inside the server):
-
-```bash
+# 3. Start local development server (with Vite HMR middleware)
 npm run dev
+
+# 4. Start production standalone server
+npm start
 ```
 
-## Configuration
+On first startup, the server prints default admin credentials in the terminal:
+- **Username**: `admin`
+- **Password**: `admin123`
 
-Copy `.env.example` to `.env` and adjust as needed. All variables are optional:
+You will be prompted to change the default password and configure a security recovery question in **Settings**.
 
-| Variable                                    | Default              | Purpose                                                                            |
-| ------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------- |
-| `PORT` / `HOST`                             | random / `0.0.0.0`   | Single port for API + UI; unset = random 5-digit, persisted in `data/runtime.json` |
-| `DATA_DIR`                                  | `./data`             | Where the SQLite DB lives                                                          |
-| `DATABASE_FILE`                             | `<DATA_DIR>/app.db`  | Explicit DB path override                                                          |
-| `SESSION_DAYS`                              | `7`                  | Session cookie lifetime                                                            |
-| `COOKIE_SECURE`                             | `false`              | Set `true` when served over HTTPS                                                  |
-| `DEFAULT_ADMIN_USER` / `DEFAULT_ADMIN_PASS` | `admin` / `admin123` | Used only while the users table is empty                                           |
+---
 
-## Connecting a repository
+## 🐳 Docker Deployment
 
-Create a **service** in the panel (_Services → New service_). Each service gets a unique webhook URL like:
+VPS CI/CD provides production and staging Docker configurations exposing dedicated non-standard ports to prevent port conflicts with standard services (3000, 8000, 8080, 80, 443).
 
-```
-https://your-vps:<port>/api/hooks/<token>
-```
-
-### GitHub
-
-Repo → _Settings → Webhooks → Add webhook_:
-
-- **Payload URL**: the service's webhook URL
-- **Content type**: `application/json`
-- **Secret**: paste the secret from the service (or generate one in the panel and copy it)
-- **Events**: _Just the push event_ (other events are safely ignored)
-
-### GitLab
-
-Repo → _Settings → Webhooks_:
-
-- **URL**: the service's webhook URL
-- **Secret token**: the service's secret
-- **Trigger**: _Push events_
-
-### Bitbucket
-
-Repo → _Repository settings → Webhooks → Add webhook_:
-
-- **URL**: the service's webhook URL (append `?token=<secret>` if you set one)
-- **Triggers**: _Repository push_
-
-Bitbucket Cloud does not sign payloads, so the service verifies an optional token you append to the URL. Leave the secret empty to accept unsigned deliveries — treat the hook URL as private in that case. Branch and commit are read from `push.changes[].new`.
-
-### Gitea / Forgejo (incl. Codeberg)
-
-Repo → _Settings → Webhooks → Add webhook → Gitea_:
-
-- **Target URL**: the service's webhook URL
-- **Secret**: the service's secret (sent as an HMAC SHA-256 `X-Gitea-Signature` / `X-Forgejo-Signature`)
-- **Trigger on**: _Push events_
-
-### Gogs
-
-Repo → _Settings → Webhooks → Add webhook_:
-
-- **Payload URL**: the service's webhook URL
-- **Secret**: the service's secret (sent as an HMAC SHA-256 `X-Gogs-Signature`)
-- **Trigger**: _Push_
-
-### Anything else
-
-Any tool that can POST JSON works. Send the token in the configured header (default `X-Webhook-Token`) or as `?token=…`. Payloads with a `ref` of the form `refs/heads/<branch>` (GitHub/GitLab/Gitea/Gogs push format) get full branch handling; a `branch` field also works.
-
-### Testing without pushing
+### Production High-Availability (2 Backend Instances + Nginx + Prometheus + Grafana)
 
 ```bash
-npm run simulate:hook -- "http://localhost:<port>/api/hooks/<token>" \
-  --provider github --secret <secret> --branch staging
+# Start production containers (Nginx on port 19443)
+npm run docker:prod:up
+
+# View logs across all cluster services
+npm run docker:prod:logs
+
+# Tear down production containers
+npm run docker:prod:down
 ```
 
-## How a trigger runs
-
-1. Signature / token is verified (mismatches are stored as _rejected_ and answered `401`).
-2. Non-push events and tag pushes are stored as _skipped_.
-3. The pushed branch is checked against the allowed list (if configured).
-4. The run is queued — one run per service at a time; if one is already running, only the newest pending trigger is kept.
-5. `git fetch` → checkout the target branch → `pull --ff-only` or `reset --hard origin/<branch>` (clones first if the folder is empty and auto-clone is on).
-6. Commands run top-to-bottom in the folder; a failing command stops the run unless _continue on error_ is set.
-7. Everything is written to the trigger log (view in _Activity_).
-
-## Deploying on a VPS
-
-### systemd (recommended)
+### Staging Environment
 
 ```bash
-sudo useradd -m deploy            # or reuse an existing user
-sudo mkdir -p /opt/vps-ci-cd && sudo chown deploy:deploy /opt/vps-ci-cd
-# as deploy: clone/copy the project, npm install, npm run build, add .env
-sudo cp deploy/vps-ci-cd.service /etc/systemd/system/
-sudo sed -i 's/User=deploy/User=<your-user>/; s|/opt/vps-ci-cd|<install-dir>|g' /etc/systemd/system/vps-ci-cd.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now vps-ci-cd
+# Start staging containers (Nginx on port 19444)
+npm run docker:staging:up
+
+# Tear down staging containers
+npm run docker:staging:down
 ```
 
-Adjust `User=`, `Group=` and `WorkingDirectory=` in the unit to match your install.
+### Default Port Mappings in Docker
 
-### PM2
+| Service | Environment | Host Port | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Nginx Web & API Proxy** | Production | `19443` | Main Web UI, API, and Webhooks |
+| **Nginx Web & API Proxy** | Staging | `19444` | Staging Web UI, API, and Webhooks |
+| **Prometheus** | Production | `19090` | Telemetry Metrics Scraper |
+| **Prometheus** | Staging | `19091` | Staging Metrics Scraper |
+| **Grafana** | Production | `13000` | Monitoring Dashboards (login: `admin`/`admin`) |
+| **Grafana** | Staging | `13001` | Staging Monitoring Dashboards |
 
-```bash
-npm i -g pm2
-pm2 start deploy/ecosystem.config.cjs
-pm2 save
+---
+
+## ⚙️ Environment Variables
+
+Configure environment variables via `.env.production`, `.env.staging`, or `.env.local`:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `production` | Environment mode (`development` or `production`) |
+| `PORT` | `3000` | Internal backend server listening port |
+| `PROD_PORT` | `19443` | Host port exposed by Nginx in production |
+| `STAGING_PORT` | `19444` | Host port exposed by Nginx in staging |
+| `DATABASE_URL` | `""` | Remote PostgreSQL connection string (`postgres://user:pass@host:5432/db`) |
+| `PG_SSL` | `false` | Enable TLS/SSL for PostgreSQL connection |
+| `DATA_DIR` | `/app/data` | Directory for local data runtime files and SQLite storage |
+| `SESSION_DAYS` | `7` | Administrator session cookie duration in days |
+| `COOKIE_SECURE` | `false` | Set to `true` when serving over HTTPS/TLS |
+| `DEFAULT_ADMIN_USER`| `admin` | Initial admin username on clean database boot |
+| `DEFAULT_ADMIN_PASS`| `admin123` | Initial admin password on clean database boot |
+| `METRICS_ENABLED` | `true` | Enable Prometheus metrics endpoint at `/api/metrics` |
+| `SWAGGER_ENABLED` | `true` | Enable OpenAPI Swagger documentation at `/api/docs` |
+
+---
+
+## 🔌 API & Tooling
+
+### Interactive Swagger UI
+Access the complete API explorer in your browser:
+```
+http://<server-host>:19443/api/docs
+```
+Raw OpenAPI specification JSON is available at:
+```
+http://<server-host>:19443/api/docs/openapi.json
 ```
 
-(Edit `cwd` in the ecosystem file to your install dir.)
+### Postman Collection
+Import [`vps-ci-cd.postman_collection.json`](file:///Users/mctavish/github/vps_ci-cd/vps-ci-cd.postman_collection.json) directly into Postman. It includes:
+- Authentication & session cookies management
+- Service creation, updating, listing, and deletion
+- Immediate manual trigger dispatch
+- Webhook simulation requests with signature headers
+- System telemetry and health checks
 
-### Behind a reverse proxy (nginx example)
+---
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name deploy.example.com;
-    # ... your cert config ...
-    location / {
-        proxy_pass http://127.0.0.1:<port>;   # the port from the startup banner / PORT env
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+## 🛡️ Security & Best Practices
 
-Then set **Settings → Public base URL** to `https://deploy.example.com` so the webhook URLs shown in the panel are correct, and set `COOKIE_SECURE=true`.
+1. **Change Default Credentials**: Change the initial administrator password immediately upon first boot.
+2. **Setup Security Question**: Configure the recovery security question in Settings as the fail-safe recovery path.
+3. **Use Webhook Secrets**: Always configure a strong random secret on each service and match it in your git provider settings.
+4. **HTTPS / TLS Reverse Proxy**: When exposing VPS CI/CD publicly, set `COOKIE_SECURE=true` and terminate TLS with Certbot/Nginx.
+5. **Least Privilege**: The process only requires write permissions on directories intended for synchronization.
 
-## PostgreSQL (later)
+---
 
-All SQL goes through Knex (`server/src/db/index.js`). To switch:
+## 📄 License
 
-1. `npm install -w server pg`
-2. Change the client to `pg` and provide a connection object (or `connectionString`).
-3. Re-run migrations (`npm start` runs `migrate.latest()` on boot).
-
-The schema uses portable column types only.
-
-## Project layout
-
-```
-server/src/
-  index.js            # express app, static UI, boot
-  config.js           # env-driven configuration
-  db/                 # knex instance + migrations (SQLite)
-  auth/               # sessions, first-boot admin
-  routes/             # auth, services, triggers, settings, hooks (public)
-  core/               # git sync engine, command runner, run queue
-  webhooks/           # signature verification + payload parsing
-web/src/
-  App.svelte          # auth gate, shell, hash router
-  components/         # sidebar, header, modals, badges, log viewer…
-  pages/              # login, dashboard, services, editor, activity, settings
-deploy/               # systemd unit + PM2 ecosystem
-scripts/              # simulate-webhook + screenshot dev helpers
-```
-
-## Security notes
-
-- Webhook secrets are stored as-is (they are shared HMAC secrets / tokens, required verbatim for verification).
-- Commands are executed with the privileges of the server user — only trusted admins can edit services.
-- Login attempts are throttled (5 failures → 15-minute lockout).
-- Set `COOKIE_SECURE=true` and serve over HTTPS in production.
+MIT © VPS CI/CD Maintainers

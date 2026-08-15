@@ -2,6 +2,7 @@ import { db, insertReturning } from '../db/index.js';
 import { syncService } from './git.js';
 import { execCommand } from './exec.js';
 import { nowIso, parseList, indent } from '../util/misc.js';
+import { activeSyncs, syncDuration, triggersTotal } from './metrics.js';
 
 // Per-service serialization: one run at a time, latest pending trigger wins.
 const queues = new Map(); // serviceId -> { running: boolean, pending: number[] }
@@ -87,6 +88,7 @@ async function runTrigger(serviceId, triggerId) {
   if (trigger.sha) log(`Commit from trigger: ${String(trigger.sha).slice(0, 12)}`);
 
   const startedAt = Date.now();
+  activeSyncs.inc({ service_id: String(serviceId) });
   await db('triggers').where({ id: triggerId }).update({
     status: 'running',
     started_at: nowIso(),
@@ -132,16 +134,26 @@ async function runTrigger(serviceId, triggerId) {
   } catch (err) {
     status = 'failed';
     log(`ERROR: ${err.message}`);
+  } finally {
+    activeSyncs.dec({ service_id: String(serviceId) });
   }
 
   const finishedAt = nowIso();
+  const durationMs = Date.now() - startedAt;
+  syncDuration.observe({ service_id: String(serviceId), status }, durationMs / 1000);
+  triggersTotal.inc({
+    source: trigger.source || 'manual',
+    status,
+    provider: service.provider || 'unknown',
+  });
+
   if (status === 'success') log('Completed successfully.');
   else if (status === 'failed') log('Finished with errors.');
 
   await db('triggers').where({ id: triggerId }).update({
     status,
     finished_at: finishedAt,
-    duration_ms: Date.now() - startedAt,
+    duration_ms: durationMs,
     log: lines.join('\n'),
   });
   await db('services').where({ id: serviceId }).update({

@@ -1,7 +1,8 @@
 <script>
-  import { KeyRound, ShieldQuestion, Globe, Save } from '@lucide/svelte';
+  import { KeyRound, ShieldQuestion, Globe, Save, ExternalLink, Activity, BookOpen } from '@lucide/svelte';
   import { api } from '../lib/api.js';
   import ChangePasswordModal from '../components/ChangePasswordModal.svelte';
+  import { fireConfetti } from '../lib/confetti.js';
   import { toast, toastError } from '../lib/toast.svelte.js';
 
   let me = $state(null);
@@ -38,7 +39,8 @@
     qBusy = true;
     try {
       await api.put('/api/auth/security-question', { question, answer });
-      toast('Security question saved', 'success');
+      fireConfetti({ count: 30 });
+      toast('Security question updated', 'success');
       answer = '';
       load();
     } catch (err) {
@@ -111,6 +113,30 @@
     {#if urlBusy}<span class="spinner"></span>{:else}<Save size={14} />{/if}
     Save URL
   </button>
+</div>
+
+<div class="card">
+  <div class="section-title"><Activity size={13} /> Developer API &amp; Telemetry</div>
+  <div style="display:flex; flex-direction:column; gap:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+      <div>
+        <div style="font-weight:600;">Swagger / OpenAPI 3.0 Documentation</div>
+        <div class="small muted">Explore the REST API schema and test endpoints interactively.</div>
+      </div>
+      <a href="/api/docs" target="_blank" class="btn btn-sm">
+        <BookOpen size={13} /> Open Swagger Docs <ExternalLink size={12} />
+      </a>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; border-top:1px solid var(--border); padding-top:12px;">
+      <div>
+        <div style="font-weight:600;">Prometheus Metrics Endpoint</div>
+        <div class="small muted">Scrape runtime metrics, HTTP request rates, and deployment latency.</div>
+      </div>
+      <a href="/api/metrics" target="_blank" class="btn btn-sm">
+        <Activity size={13} /> View Metrics <ExternalLink size={12} />
+      </a>
+    </div>
+  </div>
 </div>
 
 {#if passModal}

@@ -1,12 +1,14 @@
 <script>
-  import { Plus, RefreshCw, Pencil, Trash2, GitFork } from '@lucide/svelte';
+  import { Plus, RefreshCw, Pencil, Trash2, GitFork, Play } from '@lucide/svelte';
   import { api } from '../lib/api.js';
   import { navigate } from '../lib/router.svelte.js';
   import StatusBadge from '../components/StatusBadge.svelte';
   import ProviderIcon from '../components/ProviderIcon.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import WebhookSimulatorModal from '../components/WebhookSimulatorModal.svelte';
   import { timeAgo } from '../lib/format.js';
+  import { fireConfetti } from '../lib/confetti.js';
   import { toast, toastError } from '../lib/toast.svelte.js';
 
   let services = $state([]);
@@ -14,6 +16,8 @@
   let syncingId = $state(null);
   let deleting = $state(null);
   let deleteBusy = $state(false);
+  let simulatorService = $state(null);
+  let showGlobalSimulator = $state(false);
 
   async function load() {
     try {
@@ -53,6 +57,7 @@
     syncingId = s.id;
     try {
       await api.post(`/api/services/${s.id}/sync`, {});
+      fireConfetti({ count: 40 });
       toast(`Sync started for "${s.name}"`, 'info');
       setTimeout(load, 2500);
     } catch (e) {
@@ -79,9 +84,16 @@
 
 <div class="page-head">
   <h2>{services.length} service{services.length === 1 ? '' : 's'}</h2>
-  <button class="btn btn-primary" onclick={() => navigate('/services/new')}>
-    <Plus size={15} /> New service
-  </button>
+  <div style="display:flex; gap:10px;">
+    {#if services.length > 0}
+      <button class="btn btn-ghost" onclick={() => (showGlobalSimulator = true)}>
+        <Play size={14} /> Simulate Webhook
+      </button>
+    {/if}
+    <button class="btn btn-primary" onclick={() => navigate('/services/new')}>
+      <Plus size={15} /> New service
+    </button>
+  </div>
 </div>
 
 {#if loading}
@@ -108,7 +120,7 @@
           <th>Folder</th>
           <th>Last sync</th>
           <th style="width:64px;">On</th>
-          <th style="width:150px;"></th>
+          <th style="width:190px;"></th>
         </tr>
       </thead>
       <tbody>
@@ -132,14 +144,26 @@
               {/if}
             </td>
             <td>
-              <label class="toggle">
+              <label class="toggle" aria-label={`Toggle ${s.name} enabled state`}>
                 <input type="checkbox" checked={s.enabled} onchange={() => toggleEnabled(s)} />
                 <span class="track"></span>
               </label>
             </td>
             <td>
               <div style="display:flex; gap:6px; justify-content:flex-end;">
-                <button class="btn btn-sm" onclick={() => syncNow(s)} disabled={syncingId === s.id || !s.enabled} title="Sync now">
+                <button
+                  class="btn btn-sm btn-ghost btn-icon"
+                  onclick={() => (simulatorService = s)}
+                  title="Simulate webhook delivery"
+                >
+                  <Play size={13} />
+                </button>
+                <button
+                  class="btn btn-sm"
+                  onclick={() => syncNow(s)}
+                  disabled={syncingId === s.id || !s.enabled}
+                  title="Sync now"
+                >
                   {#if syncingId === s.id}
                     <span class="spinner"></span>
                   {:else}
@@ -160,6 +184,20 @@
       </tbody>
     </table>
   </div>
+{/if}
+
+{#if simulatorService}
+  <WebhookSimulatorModal
+    service={simulatorService}
+    onClose={() => (simulatorService = null)}
+  />
+{/if}
+
+{#if showGlobalSimulator}
+  <WebhookSimulatorModal
+    {services}
+    onClose={() => (showGlobalSimulator = false)}
+  />
 {/if}
 
 {#if deleting}

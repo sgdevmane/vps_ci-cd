@@ -1,0 +1,35 @@
+# =============================================================================
+# VPS CI/CD — Production Server Dockerfile
+# Multi-stage slim Node.js 20 build with git and SSH support
+# =============================================================================
+
+FROM node:20-alpine AS base
+
+# Install git, openssh-client and bash required for git operations & script execution
+RUN apk add --no-cache git openssh-client bash ca-certificates
+
+WORKDIR /app
+
+# Copy root workspace and package manifests
+COPY package.json package-lock.json ./
+COPY server/package.json ./server/
+COPY web/package.json ./web/
+
+# Install dependencies (production + build tools)
+RUN npm ci
+
+# Copy server code
+COPY server ./server
+
+# Expose internal backend port
+ENV PORT=3000
+ENV HOST=0.0.0.0
+ENV NODE_ENV=production
+
+EXPOSE 3000
+
+# Healthcheck to verify backend status
+HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+
+CMD ["node", "server/src/index.js"]

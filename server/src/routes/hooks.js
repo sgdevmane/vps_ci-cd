@@ -3,6 +3,7 @@ import { db, insertReturning } from "../db/index.js";
 import { getProvider } from "../webhooks/verify.js";
 import { enqueueTrigger } from "../core/runner.js";
 import { nowIso, parseList } from "../util/misc.js";
+import { webhooksReceivedTotal } from "../core/metrics.js";
 
 const router = Router();
 
@@ -52,6 +53,11 @@ router.post("/hooks/:hookToken", async (req, res, next) => {
     info.signatureOk = check.verified ? check.ok : null;
 
     if (!check.ok) {
+      webhooksReceivedTotal.inc({
+        provider: service.provider,
+        verified: check.verified ? 'failed' : 'no_secret',
+        status: 'rejected',
+      });
       const triggerId = await recordClosedTrigger(
         service.id,
         info,
@@ -63,6 +69,12 @@ router.post("/hooks/:hookToken", async (req, res, next) => {
       );
       return res.status(401).json({ error: check.reason, triggerId });
     }
+
+    webhooksReceivedTotal.inc({
+      provider: service.provider,
+      verified: check.verified ? 'verified' : 'unverified',
+      status: 'accepted',
+    });
 
     if (info.event === "ping") {
       const triggerId = await recordClosedTrigger(service.id, info, "success", [

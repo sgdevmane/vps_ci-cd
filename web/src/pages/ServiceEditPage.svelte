@@ -1,21 +1,25 @@
 <script>
   import {
-    ArrowLeft, Save, Trash2, Eye, EyeOff, Shuffle, Plus, ChevronUp, ChevronDown, Webhook,
+    ArrowLeft, Save, Trash2, Eye, EyeOff, Shuffle, Plus, ChevronUp, ChevronDown, Webhook, Play,
   } from '@lucide/svelte';
   import { api } from '../lib/api.js';
   import { navigate } from '../lib/router.svelte.js';
   import CopyInput from '../components/CopyInput.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import WebhookSimulatorModal from '../components/WebhookSimulatorModal.svelte';
+  import { fireConfetti } from '../lib/confetti.js';
   import { toast, toastError } from '../lib/toast.svelte.js';
 
   let { id } = $props();
-  const isNew = !id;
+  const isNew = $derived(!id);
 
-  let loading = $state(!isNew);
+  let loading = $state(false);
   let saving = $state(false);
   let showSecret = $state(false);
   let confirmDelete = $state(false);
   let deleteBusy = $state(false);
+  let showSimulator = $state(false);
+  let rawService = $state(null);
 
   let form = $state({
     name: '',
@@ -35,9 +39,12 @@
   let hookUrl = $state('');
 
   async function load() {
+    if (!id) return;
+    loading = true;
     try {
       const res = await api.get(`/api/services/${id}`);
       const s = res.service;
+      rawService = s;
       form = {
         name: s.name,
         provider: s.provider,
@@ -67,7 +74,28 @@
   }
 
   $effect(() => {
-    if (!isNew) load();
+    if (id) {
+      load();
+    } else {
+      rawService = null;
+      form = {
+        name: '',
+        provider: 'github',
+        repo_url: '',
+        folder_path: '',
+        branch_mode: 'webhook',
+        fixed_branch: '',
+        allowed_branches: '',
+        sync_mode: 'pull',
+        clone_if_empty: true,
+        secret: '',
+        generic_token_header: 'X-Webhook-Token',
+        enabled: true,
+        commands: [],
+      };
+      hookUrl = '';
+      loading = false;
+    }
   });
 
   function addCommand() {
@@ -101,11 +129,13 @@
       const body = { ...form, commands: form.commands };
       if (isNew) {
         const res = await api.post('/api/services', body);
-        toast('Service created', 'success');
+        fireConfetti({ count: 50 });
+        toast('Service created successfully', 'success');
         navigate(`/services/${res.service.id}`);
       } else {
         await api.put(`/api/services/${id}`, body);
-        toast('Service saved', 'success');
+        fireConfetti({ count: 30 });
+        toast('Service changes saved', 'success');
         await load();
       }
     } catch (e) {
@@ -137,6 +167,9 @@
     </button>
     <div style="display:flex; gap:10px;">
       {#if !isNew}
+        <button class="btn btn-ghost" onclick={() => (showSimulator = true)} title="Simulate webhook payload">
+          <Play size={14} /> Simulate Webhook
+        </button>
         <button class="btn btn-danger" onclick={() => (confirmDelete = true)}>
           <Trash2 size={14} /> Delete
         </button>
@@ -341,7 +374,7 @@
     <div class="card">
       <div class="section-title"><Webhook size={13} /> Webhook endpoint</div>
       <div class="field">
-        <label class="label">Payload URL</label>
+        <span class="label">Payload URL</span>
         <CopyInput value={hookUrl} />
         <div class="field-hint">
           {#if form.provider === 'github'}
@@ -374,6 +407,13 @@
       {isNew ? 'Create service' : 'Save changes'}
     </button>
   </div>
+{/if}
+
+{#if showSimulator && rawService}
+  <WebhookSimulatorModal
+    service={rawService}
+    onClose={() => (showSimulator = false)}
+  />
 {/if}
 
 {#if confirmDelete}

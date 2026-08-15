@@ -14,6 +14,10 @@ export const config = {
   cookieSecure: process.env.COOKIE_SECURE === "true",
   defaultAdminUser: process.env.DEFAULT_ADMIN_USER || "admin",
   defaultAdminPass: process.env.DEFAULT_ADMIN_PASS || "admin123",
+  databaseUrl: process.env.DATABASE_URL || process.env.PG_CONNECTION_STRING || null,
+  pgSsl: process.env.PG_SSL === "true" || (process.env.DATABASE_URL && process.env.DATABASE_URL.includes("sslmode=require")),
+  metricsEnabled: process.env.METRICS_ENABLED !== "false",
+  swaggerEnabled: process.env.SWAGGER_ENABLED !== "false",
 };
 
 fs.mkdirSync(config.dataDir, { recursive: true });
