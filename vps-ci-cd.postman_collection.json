@@ -1,129 +1,44 @@
 {
   "info": {
-    "_postman_id": "9b8e217d-2b4a-4e20-9bf7-vps-cicd-runner",
-    "name": "VPS CI/CD API Collection",
-    "description": "Production-ready Postman Collection for VPS CI/CD webhook-driven git sync & deployment automation runner.",
+    "name": "VPS CI/CD Automation Runner API",
+    "description": "Comprehensive Postman Collection for VPS CI/CD with Auth, Services, Rollbacks, Env Vars, Notifications, Webhooks, and Telemetry.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:19443",
-      "type": "string"
-    },
-    {
-      "key": "adminUser",
-      "value": "admin",
-      "type": "string"
-    },
-    {
-      "key": "adminPass",
-      "value": "admin123",
-      "type": "string"
-    },
-    {
-      "key": "hookToken",
-      "value": "your_service_hook_token_here",
-      "type": "string"
-    },
-    {
-      "key": "serviceId",
-      "value": "1",
-      "type": "string"
-    }
+    { "key": "baseUrl", "value": "http://localhost:19443", "type": "string" },
+    { "key": "serviceId", "value": "1", "type": "string" },
+    { "key": "triggerId", "value": "1", "type": "string" },
+    { "key": "hookToken", "value": "03fe4862b5d4e12e", "type": "string" },
+    { "key": "channelId", "value": "1", "type": "string" }
   ],
   "item": [
     {
-      "name": "Auth",
+      "name": "Authentication",
       "item": [
         {
-          "name": "1. Login (Establish Session)",
+          "name": "Sign In (Login)",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "url": "{{baseUrl}}/api/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"{{adminUser}}\",\n  \"password\": \"{{adminPass}}\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "login"]
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
             }
           }
         },
         {
-          "name": "2. Get Current User (Me)",
+          "name": "Get Current User",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "me"]
-            }
+            "url": "{{baseUrl}}/api/auth/me"
           }
         },
         {
-          "name": "3. Change Password",
+          "name": "Sign Out (Logout)",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"currentPassword\": \"{{adminPass}}\",\n  \"newPassword\": \"NewStrongPass!123\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/change-password",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "change-password"]
-            }
-          }
-        },
-        {
-          "name": "4. Get Security Question",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/security-question",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "security-question"]
-            }
-          }
-        },
-        {
-          "name": "5. Set Security Question",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"question\": \"What is the hostname of your production VPS?\",\n  \"answer\": \"vps-master-node-01\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/security-question",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "security-question"]
-            }
-          }
-        },
-        {
-          "name": "6. Logout",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/logout",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "auth", "logout"]
-            }
+            "url": "{{baseUrl}}/api/auth/logout"
           }
         }
       ]
@@ -132,32 +47,21 @@
       "name": "Services",
       "item": [
         {
-          "name": "List All Services",
+          "name": "List Services",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/services",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "services"]
-            }
+            "url": "{{baseUrl}}/api/services"
           }
         },
         {
           "name": "Create Service",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "url": "{{baseUrl}}/api/services",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Marketing Web App\",\n  \"provider\": \"github\",\n  \"repo_url\": \"https://github.com/example/marketing-site.git\",\n  \"folder_path\": \"/var/www/marketing-site\",\n  \"branch_mode\": \"webhook\",\n  \"allowed_branches\": \"main,staging\",\n  \"sync_mode\": \"pull\",\n  \"clone_if_empty\": true,\n  \"secret\": \"my_super_secret_token_123\",\n  \"enabled\": true,\n  \"commands\": [\n    {\n      \"command\": \"npm ci && npm run build\",\n      \"branch_filter\": \"\",\n      \"continue_on_error\": false\n    },\n    {\n      \"command\": \"pm2 reload ecosystem.config.cjs\",\n      \"branch_filter\": \"main\",\n      \"continue_on_error\": false\n    }\n  ]\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/services",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "services"]
+              "raw": "{\n  \"name\": \"Frontend App\",\n  \"provider\": \"github\",\n  \"repo_url\": \"https://github.com/org/frontend.git\",\n  \"folder_path\": \"/var/www/frontend\",\n  \"branch_mode\": \"webhook\",\n  \"sync_mode\": \"pull\",\n  \"secret\": \"whsec_topsecret123\",\n  \"commands\": [\n    {\n      \"command\": \"npm ci && npm run build\",\n      \"continue_on_error\": false\n    }\n  ]\n}"
             }
           }
         },
@@ -165,159 +69,98 @@
           "name": "Get Service by ID",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/services/{{serviceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "services", "{{serviceId}}"]
-            }
+            "url": "{{baseUrl}}/api/services/{{serviceId}}"
           }
         },
         {
-          "name": "Update Service",
+          "name": "Manual Sync / Deploy",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}/sync",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"branch\": \"main\"\n}" }
+          }
+        },
+        {
+          "name": "Rollback Service to Commit",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}/rollback",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"targetSha\": \"a1b2c3d4e5f67890\"\n}" }
+          }
+        },
+        {
+          "name": "Get Commit History",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}/commits"
+          }
+        },
+        {
+          "name": "Get Service Env Vars",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/services/{{serviceId}}/env"
+          }
+        },
+        {
+          "name": "Save Service Env Vars",
           "request": {
             "method": "PUT",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "url": "{{baseUrl}}/api/services/{{serviceId}}/env",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Marketing Web App Updated\",\n  \"provider\": \"github\",\n  \"repo_url\": \"https://github.com/example/marketing-site.git\",\n  \"folder_path\": \"/var/www/marketing-site\",\n  \"branch_mode\": \"webhook\",\n  \"allowed_branches\": \"main,staging\",\n  \"sync_mode\": \"pull\",\n  \"clone_if_empty\": true,\n  \"secret\": \"my_super_secret_token_123\",\n  \"enabled\": true\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/services/{{serviceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "services", "{{serviceId}}"]
+              "raw": "{\n  \"env\": [\n    { \"key\": \"PORT\", \"value\": \"3000\" },\n    { \"key\": \"API_KEY\", \"value\": \"secret_value_123\" }\n  ]\n}"
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "List Channels",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/notifications/channels" }
         },
         {
-          "name": "Trigger Manual Sync",
+          "name": "Create Channel",
           "request": {
             "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
+            "url": "{{baseUrl}}/api/notifications/channels",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"branch\": \"main\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/services/{{serviceId}}/sync",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "services", "{{serviceId}}", "sync"]
+              "raw": "{\n  \"name\": \"Slack DevOps\",\n  \"provider\": \"slack\",\n  \"webhook_url\": \"https://hooks.slack.com/services/T00/B00/X00\"\n}"
             }
           }
         },
         {
-          "name": "Delete Service",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/services/{{serviceId}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "services", "{{serviceId}}"]
-            }
-          }
+          "name": "Test Channel Alert",
+          "request": { "method": "POST", "url": "{{baseUrl}}/api/notifications/channels/{{channelId}}/test" }
         }
       ]
     },
     {
-      "name": "Triggers & Logs",
+      "name": "System & Telemetry",
       "item": [
         {
-          "name": "List Recent Triggers",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/triggers?limit=50",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "triggers"],
-              "query": [
-                { "key": "limit", "value": "50" }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get Trigger Detail & Logs",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/triggers/1",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "triggers", "1"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Webhooks (Public)",
-      "item": [
-        {
-          "name": "Inbound GitHub Push Webhook",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-GitHub-Event", "value": "push" },
-              { "key": "X-Hub-Signature-256", "value": "sha256=..." }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ref\": \"refs/heads/main\",\n  \"after\": \"9f7b6a5e1234567890abcdef1234567890abcdef\",\n  \"head_commit\": {\n    \"id\": \"9f7b6a5e1234567890abcdef1234567890abcdef\",\n    \"message\": \"Deploy v1.2.0 release\"\n  }\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/hooks/{{hookToken}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "hooks", "{{hookToken}}"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "System & Metrics",
-      "item": [
-        {
-          "name": "Health Check",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "health"]
-            }
-          }
+          "name": "System Health",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/system/health" }
         },
         {
           "name": "Prometheus Metrics",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/metrics",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "metrics"]
-            }
-          }
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/metrics" }
         },
         {
-          "name": "OpenAPI Specification JSON",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/docs/swagger.json",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "docs", "swagger.json"]
-            }
-          }
+          "name": "Export Backup JSON",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/system/backup/export" }
+        },
+        {
+          "name": "Status Badge SVG",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/badges/{{serviceId}}/status.svg" }
         }
       ]
     }

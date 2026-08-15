@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS services (
   generic_token_header VARCHAR(128) DEFAULT 'X-Webhook-Token',
   hook_token VARCHAR(255) NOT NULL UNIQUE,
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  healthcheck_url TEXT,
+  auto_rollback BOOLEAN NOT NULL DEFAULT FALSE,
+  maintenance_mode BOOLEAN NOT NULL DEFAULT FALSE,
   last_sync_at VARCHAR(64),
   last_status VARCHAR(64),
   created_at VARCHAR(64) NOT NULL,
@@ -103,7 +106,67 @@ CREATE INDEX IF NOT EXISTS idx_triggers_status ON triggers(status);
 CREATE INDEX IF NOT EXISTS idx_triggers_created_at ON triggers(created_at DESC);
 
 -- ----------------------------------------------------------------------------
--- 6. Settings Table (Key-Value System Configurations)
+-- 6. Notification Channels Table (Slack, Discord, Telegram, Webhook, Email)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notification_channels (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  provider VARCHAR(64) NOT NULL DEFAULT 'slack',
+  webhook_url TEXT,
+  config TEXT,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at VARCHAR(64) NOT NULL,
+  updated_at VARCHAR(64) NOT NULL
+);
+
+-- ----------------------------------------------------------------------------
+-- 7. Service Notifications Mapping Table
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS service_notifications (
+  id SERIAL PRIMARY KEY,
+  service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  channel_id INTEGER NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+  on_start BOOLEAN NOT NULL DEFAULT FALSE,
+  on_success BOOLEAN NOT NULL DEFAULT TRUE,
+  on_failure BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE(service_id, channel_id)
+);
+
+-- ----------------------------------------------------------------------------
+-- 8. Service Environment Variables Table (Encrypted at rest)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS service_env (
+  id SERIAL PRIMARY KEY,
+  service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+  key VARCHAR(255) NOT NULL,
+  value_enc TEXT NOT NULL,
+  is_secret BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at VARCHAR(64) NOT NULL,
+  updated_at VARCHAR(64) NOT NULL,
+  UNIQUE(service_id, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_service_env_service_id ON service_env(service_id);
+
+-- ----------------------------------------------------------------------------
+-- 9. Audit Logs Table (Activity Tracking)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER,
+  action VARCHAR(255) NOT NULL,
+  target_type VARCHAR(64),
+  target_id VARCHAR(64),
+  details TEXT,
+  ip VARCHAR(128),
+  created_at VARCHAR(64) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_target ON audit_logs(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+
+-- ----------------------------------------------------------------------------
+-- 10. Settings Table (Key-Value System Configurations)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS settings (
   key VARCHAR(255) PRIMARY KEY,
@@ -111,7 +174,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- ----------------------------------------------------------------------------
--- 7. Default Admin Seeding (Creates default admin user if table is empty)
+-- 11. Default Admin Seeding (Creates default admin user if table is empty)
 -- Note: Password is 'admin123' hashed with scrypt, must_change_password=TRUE.
 -- ----------------------------------------------------------------------------
 INSERT INTO users (username, password_hash, must_change_password, created_at, updated_at)

@@ -12,6 +12,9 @@ import authRoutes from "./routes/auth.js";
 import serviceRoutes from "./routes/services.js";
 import triggerRoutes from "./routes/triggers.js";
 import settingsRoutes from "./routes/settings.js";
+import notificationsRoutes from "./routes/notifications.js";
+import badgesRoutes from "./routes/badges.js";
+import systemRoutes from "./routes/system.js";
 import hookRoutes from "./routes/hooks.js";
 import docsRoutes from "./routes/docs.js";
 
@@ -40,6 +43,9 @@ if (config.swaggerEnabled) {
   app.use("/api/docs", docsRoutes);
 }
 
+// Public badges endpoint (no auth required)
+app.use("/api/badges", badgesRoutes);
+
 // Webhooks get the raw body so HMAC signatures can be verified.
 app.use("/api/hooks", express.raw({ type: "*/*", limit: "5mb" }));
 app.use("/api", express.json({ limit: "1mb" }));
@@ -56,6 +62,8 @@ app.get("/api/health", (req, res) =>
 app.use("/api/auth", authRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/triggers", triggerRoutes);
+app.use("/api/notifications", notificationsRoutes);
+app.use("/api/system", systemRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api", hookRoutes);
 app.use("/api", (req, res) => res.status(404).json({ error: "Not found" }));

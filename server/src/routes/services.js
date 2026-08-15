@@ -1,8 +1,11 @@
 import path from "node:path";
+import fs from "node:fs";
+import { execFile } from "node:child_process";
 import { Router } from "express";
 import { db, insertReturning } from "../db/index.js";
 import { requireAuth } from "../auth/session.js";
 import { newToken } from "../util/crypto.js";
+import { encryptValue } from "../core/cryptoVault.js";
 import { nowIso, parseList } from "../util/misc.js";
 import { enqueueTrigger } from "../core/runner.js";
 import { getSetting, baseUrlFor } from "../core/appSettings.js";
@@ -35,6 +38,9 @@ function validateService(body) {
     generic_token_header:
       String(body.generic_token_header ?? "X-Webhook-Token").trim() ||
       "X-Webhook-Token",
+    healthcheck_url: String(body.healthcheck_url ?? "").trim() || null,
+    auto_rollback: !!body.auto_rollback,
+    maintenance_mode: !!body.maintenance_mode,
     enabled: body.enabled === undefined ? 1 : !!body.enabled,
   };
 
@@ -86,6 +92,8 @@ async function serialize(req, row, { withCommands = false } = {}) {
     ...row,
     enabled: !!row.enabled,
     clone_if_empty: !!row.clone_if_empty,
+    auto_rollback: !!row.auto_rollback,
+    maintenance_mode: !!row.maintenance_mode,
     mustChangePassword: undefined,
     hook_url: await hookUrlFor(req, row.hook_token),
   };
@@ -194,6 +202,130 @@ router.post("/:id/sync", async (req, res, next) => {
       ip: req.ip,
     });
     res.status(202).json({ ok: true, triggerId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/rollback", async (req, res, next) => {
+  try {
+    const row = await db("services").where({ id: req.params.id }).first();
+    if (!row) return res.status(404).json({ error: "Service not found" });
+    const { targetSha, branch } = req.body || {};
+    if (!targetSha) {
+      return res.status(400).json({ error: "Target commit SHA is required for rollback" });
+    }
+    const triggerId = await enqueueTrigger(row.id, {
+      source: "rollback",
+      event: "rollback",
+      branch: branch || null,
+      sha: targetSha,
+      ip: req.ip,
+    });
+    res.status(202).json({ ok: true, triggerId, targetSha });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/commits", async (req, res, next) => {
+  try {
+    const row = await db("services").where({ id: req.params.id }).first();
+    if (!row) return res.status(404).json({ error: "Service not found" });
+    const folder = path.resolve(row.folder_path);
+    if (!fs.existsSync(path.join(folder, ".git"))) {
+      return res.json({ commits: [] });
+    }
+
+    execFile(
+      "git",
+      ["log", "-n", "30", "--pretty=format:%H|%h|%an|%ad|%s", "--date=iso"],
+      { cwd: folder },
+      (err, stdout) => {
+        if (err) return res.json({ commits: [] });
+        const commits = stdout
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => {
+            const [sha, shortSha, author, date, message] = line.split("|");
+            return { sha, shortSha, author, date, message };
+          });
+        res.json({ commits });
+      }
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Environment Variables Management per Service
+router.get("/:id/env", async (req, res, next) => {
+  try {
+    const vars = await db("service_env")
+      .where({ service_id: req.params.id })
+      .select("id", "key", "is_secret", "updated_at");
+    res.json({ env: vars });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/:id/env", async (req, res, next) => {
+  try {
+    const serviceId = req.params.id;
+    const { env } = req.body || {};
+    if (!Array.isArray(env)) return res.status(400).json({ error: "Env must be an array" });
+
+    await db("service_env").where({ service_id: serviceId }).del();
+    if (env.length) {
+      const rows = env
+        .filter((e) => e.key && String(e.key).trim())
+        .map((e) => ({
+          service_id: serviceId,
+          key: String(e.key).trim().toUpperCase(),
+          value_enc: encryptValue(e.value || ""),
+          is_secret: !!e.is_secret,
+          created_at: nowIso(),
+          updated_at: nowIso(),
+        }));
+      if (rows.length) await db("service_env").insert(rows);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Notification bindings for this service
+router.get("/:id/notifications", async (req, res, next) => {
+  try {
+    const bindings = await db("service_notifications")
+      .where({ service_id: req.params.id })
+      .select("*");
+    res.json({ bindings });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/:id/notifications", async (req, res, next) => {
+  try {
+    const serviceId = req.params.id;
+    const { bindings } = req.body || {};
+    if (!Array.isArray(bindings)) return res.status(400).json({ error: "Bindings must be an array" });
+
+    await db("service_notifications").where({ service_id: serviceId }).del();
+    if (bindings.length) {
+      const rows = bindings.map((b) => ({
+        service_id: serviceId,
+        channel_id: b.channel_id,
+        on_start: !!b.on_start,
+        on_success: b.on_success === undefined ? 1 : !!b.on_success,
+        on_failure: b.on_failure === undefined ? 1 : !!b.on_failure,
+      }));
+      await db("service_notifications").insert(rows);
+    }
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

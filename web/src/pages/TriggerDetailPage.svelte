@@ -1,5 +1,5 @@
 <script>
-  import { ArrowLeft, RefreshCw, ShieldCheck, ShieldAlert, ShieldOff } from '@lucide/svelte';
+  import { ArrowLeft, RefreshCw, ShieldCheck, ShieldAlert, ShieldOff, Radio } from '@lucide/svelte';
   import { api } from '../lib/api.js';
   import { navigate } from '../lib/router.svelte.js';
   import StatusBadge from '../components/StatusBadge.svelte';
@@ -12,6 +12,7 @@
 
   let trigger = $state(null);
   let loading = $state(true);
+  let isStreaming = $state(false);
 
   const live = $derived(trigger && ['queued', 'running'].includes(trigger.status));
 
@@ -31,8 +32,53 @@
     load();
   });
 
+  // Real-time SSE Live Log Streaming
   $effect(() => {
-    if (!live) return;
+    if (!live || typeof EventSource === 'undefined') return;
+    const es = new EventSource(`/api/triggers/${id}/stream`);
+    isStreaming = true;
+
+    es.addEventListener('log', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (trigger && data.chunk) {
+          trigger.log = (trigger.log || '') + data.chunk;
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+
+    es.addEventListener('status', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (trigger && data.status) {
+          trigger.status = data.status;
+          if (data.duration_ms) trigger.duration_ms = data.duration_ms;
+          if (!['queued', 'running'].includes(data.status)) {
+            isStreaming = false;
+            es.close();
+            load();
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+
+    es.onerror = () => {
+      isStreaming = false;
+      es.close();
+    };
+
+    return () => {
+      isStreaming = false;
+      es.close();
+    };
+  });
+
+  $effect(() => {
+    if (!live || isStreaming) return;
     const timer = setInterval(load, 2500);
     return () => clearInterval(timer);
   });
@@ -78,9 +124,15 @@
   </div>
 
   <div class="card">
-    <div class="card-head" style="margin-bottom:10px;">
-      <h3 class="card-title">Run log</h3>
-      {#if live}<span class="badge badge-info badge-running"><span class="dot"></span>live</span>{/if}
+    <div class="card-head" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <h3 class="card-title" style="margin:0;">Run log</h3>
+        {#if isStreaming}
+          <span class="badge badge-info badge-running"><span class="dot"></span><Radio size={11} /> live streaming</span>
+        {:else if live}
+          <span class="badge badge-info badge-running"><span class="dot"></span>running</span>
+        {/if}
+      </div>
     </div>
     <LogViewer log={trigger.log || 'No output yet.'} />
   </div>

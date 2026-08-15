@@ -1,73 +1,41 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "VPS CI/CD API",
-    "description": "Webhook-driven git sync & automated deployment runner for self-hosted VPS environments.",
-    "version": "1.0.0",
-    "contact": {
-      "name": "VPS CI/CD Maintainer"
-    },
-    "license": {
-      "name": "MIT"
-    }
+    "title": "VPS CI/CD Automation Runner API",
+    "description": "Webhook-driven git sync, automated zero-downtime deployment runner, and telemetry platform for self-hosted VPS instances.",
+    "version": "1.0.0"
   },
   "servers": [
     {
       "url": "/",
-      "description": "Current Server Instance"
+      "description": "Current Server"
     }
   ],
   "tags": [
-    { "name": "Auth", "description": "Authentication, session management, and password recovery" },
-    { "name": "Services", "description": "Repository ↔ Folder sync service definitions and configuration" },
-    { "name": "Triggers", "description": "Execution runs, history, logs, and manual deployment dispatch" },
-    { "name": "Settings", "description": "Global server configuration and public URLs" },
-    { "name": "Webhooks", "description": "Inbound push webhook endpoints for git providers" },
-    { "name": "System", "description": "Health checks and Prometheus observability metrics" }
+    { "name": "Auth", "description": "Authentication and user sessions" },
+    { "name": "Services", "description": "Repository and directory sync services" },
+    { "name": "Triggers", "description": "Deployment runs, SSE log streaming, and webhook audits" },
+    { "name": "Notifications", "description": "Slack, Discord, Telegram & Webhook alerts" },
+    { "name": "Badges", "description": "Shields.io dynamic SVG and JSON status badges" },
+    { "name": "System", "description": "VPS system health and disaster recovery backups" },
+    { "name": "Settings", "description": "System configuration" },
+    { "name": "Webhooks", "description": "Inbound git webhooks" }
   ],
   "paths": {
-    "/api/health": {
+    "/api/auth/me": {
       "get": {
-        "tags": ["System"],
-        "summary": "Server health status",
+        "tags": ["Auth"],
+        "summary": "Get authenticated user information",
         "responses": {
-          "200": {
-            "description": "Server is healthy",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": { "type": "boolean", "example": true },
-                    "uptime": { "type": "number", "example": 124.52 }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/metrics": {
-      "get": {
-        "tags": ["System"],
-        "summary": "Prometheus metrics endpoint",
-        "responses": {
-          "200": {
-            "description": "Prometheus text format metrics stream",
-            "content": {
-              "text/plain": {
-                "schema": { "type": "string" }
-              }
-            }
-          }
+          "200": { "description": "Current user status" },
+          "401": { "description": "Unauthenticated" }
         }
       }
     },
     "/api/auth/login": {
       "post": {
         "tags": ["Auth"],
-        "summary": "Authenticate admin user and establish session",
+        "summary": "Authenticate administrator",
         "requestBody": {
           "required": true,
           "content": {
@@ -76,171 +44,25 @@
                 "type": "object",
                 "required": ["username", "password"],
                 "properties": {
-                  "username": { "type": "string", "example": "admin" },
-                  "password": { "type": "string", "example": "admin123" }
+                  "username": { "type": "string" },
+                  "password": { "type": "string" }
                 }
               }
             }
           }
         },
         "responses": {
-          "200": {
-            "description": "Login successful",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "username": { "type": "string", "example": "admin" },
-                    "mustChangePassword": { "type": "boolean", "example": false },
-                    "hasSecurityQuestion": { "type": "boolean", "example": true }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Missing credentials" },
-          "401": { "description": "Invalid credentials" },
-          "429": { "description": "Too many failed attempts (throttled)" }
+          "200": { "description": "Sign in successful" },
+          "401": { "description": "Invalid credentials" }
         }
       }
     },
     "/api/auth/logout": {
       "post": {
         "tags": ["Auth"],
-        "summary": "Destroy current session",
+        "summary": "Terminate session",
         "responses": {
-          "200": {
-            "description": "Logged out successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": { "ok": { "type": "boolean", "example": true } }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/me": {
-      "get": {
-        "tags": ["Auth"],
-        "summary": "Retrieve current authenticated user profile",
-        "responses": {
-          "200": {
-            "description": "User profile information",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "username": { "type": "string", "example": "admin" },
-                    "mustChangePassword": { "type": "boolean", "example": false },
-                    "hasSecurityQuestion": { "type": "boolean", "example": true }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "description": "Not authenticated or session expired" }
-        }
-      }
-    },
-    "/api/auth/change-password": {
-      "post": {
-        "tags": ["Auth"],
-        "summary": "Update password for current user",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["currentPassword", "newPassword"],
-                "properties": {
-                  "currentPassword": { "type": "string" },
-                  "newPassword": { "type": "string", "minLength": 8 }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Password updated successfully" },
-          "400": { "description": "Invalid payload or password too short" },
-          "401": { "description": "Current password is wrong" }
-        }
-      }
-    },
-    "/api/auth/security-question": {
-      "get": {
-        "tags": ["Auth"],
-        "summary": "Get configured security question for password recovery",
-        "responses": {
-          "200": {
-            "description": "Security question status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "set": { "type": "boolean", "example": true },
-                    "question": { "type": "string", "example": "What was the name of your first server?" }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": ["Auth"],
-        "summary": "Set or update security question and answer",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "question": { "type": "string" },
-                  "answer": { "type": "string", "minLength": 2 }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Security question updated" },
-          "400": { "description": "Validation error" }
-        }
-      }
-    },
-    "/api/auth/reset-password": {
-      "post": {
-        "tags": ["Auth"],
-        "summary": "Reset password using security question answer",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["answer", "newPassword"],
-                "properties": {
-                  "answer": { "type": "string" },
-                  "newPassword": { "type": "string", "minLength": 8 }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Password successfully reset" },
-          "401": { "description": "Incorrect answer" },
-          "404": { "description": "No security question set" }
+          "200": { "description": "Logged out" }
         }
       }
     },
@@ -249,22 +71,7 @@
         "tags": ["Services"],
         "summary": "List all configured sync services",
         "responses": {
-          "200": {
-            "description": "List of services",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "services": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/Service" }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          "200": { "description": "List of services" }
         }
       },
       "post": {
@@ -279,20 +86,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Service created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "service": { "$ref": "#/components/schemas/ServiceWithCommands" }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Validation errors" }
+          "201": { "description": "Service created" },
+          "400": { "description": "Validation error" }
         }
       }
     },
@@ -300,32 +95,16 @@
       "get": {
         "tags": ["Services"],
         "summary": "Get service details by ID",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
-        ],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
-          "200": {
-            "description": "Service details with commands",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "service": { "$ref": "#/components/schemas/ServiceWithCommands" }
-                  }
-                }
-              }
-            }
-          },
+          "200": { "description": "Service details" },
           "404": { "description": "Service not found" }
         }
       },
       "put": {
         "tags": ["Services"],
-        "summary": "Update service configuration and commands",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
-        ],
+        "summary": "Update service configuration",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "requestBody": {
           "required": true,
           "content": {
@@ -335,302 +114,268 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Service updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "service": { "$ref": "#/components/schemas/ServiceWithCommands" }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Validation errors" },
-          "404": { "description": "Service not found" }
+          "200": { "description": "Service updated" }
         }
       },
       "delete": {
         "tags": ["Services"],
-        "summary": "Delete a service and its trigger history",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
-        ],
+        "summary": "Delete service",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
-          "200": { "description": "Service deleted successfully" },
-          "404": { "description": "Service not found" }
+          "200": { "description": "Service deleted" }
         }
       }
     },
     "/api/services/{id}/sync": {
       "post": {
         "tags": ["Services"],
-        "summary": "Manually trigger immediate git sync and deploy run",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
-        ],
+        "summary": "Manually trigger immediate git sync and deployment",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "branch": { "type": "string", "example": "main" }
+                  "branch": { "type": "string" }
                 }
               }
             }
           }
         },
         "responses": {
-          "202": {
-            "description": "Sync enqueued",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": { "type": "boolean", "example": true },
-                    "triggerId": { "type": "integer", "example": 42 }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "description": "Service not found" }
+          "202": { "description": "Sync queued" }
         }
       }
     },
-    "/api/triggers": {
-      "get": {
-        "tags": ["Triggers"],
-        "summary": "List execution triggers and webhook delivery history",
-        "parameters": [
-          { "name": "service_id", "in": "query", "schema": { "type": "integer" } },
-          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["queued", "running", "success", "failed", "skipped", "rejected"] } },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 40 } },
-          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
-        ],
+    "/api/services/{id}/rollback": {
+      "post": {
+        "tags": ["Services"],
+        "summary": "Rollback service to a target commit SHA",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["targetSha"],
+                "properties": {
+                  "targetSha": { "type": "string" },
+                  "branch": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
-            "description": "List of triggers",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "triggers": {
-                      "type": "array",
-                      "items": { "$ref": "#/components/schemas/Trigger" }
+          "202": { "description": "Rollback queued" }
+        }
+      }
+    },
+    "/api/services/{id}/commits": {
+      "get": {
+        "tags": ["Services"],
+        "summary": "Get git commit history for service repository",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Commit log" }
+        }
+      }
+    },
+    "/api/services/{id}/env": {
+      "get": {
+        "tags": ["Services"],
+        "summary": "Get encrypted environment variables keys for service",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Environment variables" }
+        }
+      },
+      "put": {
+        "tags": ["Services"],
+        "summary": "Save encrypted environment variables for service",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "env": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": { "type": "string" },
+                        "value": { "type": "string" }
+                      }
                     }
                   }
                 }
               }
             }
           }
+        },
+        "responses": {
+          "200": { "description": "Environment variables updated" }
+        }
+      }
+    },
+    "/api/triggers": {
+      "get": {
+        "tags": ["Triggers"],
+        "summary": "List execution triggers and audit history",
+        "parameters": [
+          { "name": "service_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "List of triggers" }
         }
       }
     },
     "/api/triggers/{id}": {
       "get": {
         "tags": ["Triggers"],
-        "summary": "Get trigger details including full execution logs",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
-        ],
+        "summary": "Get trigger details and full execution logs",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
-          "200": {
-            "description": "Trigger details and log",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "trigger": { "$ref": "#/components/schemas/TriggerDetail" }
-                  }
-                }
-              }
-            }
-          },
-          "404": { "description": "Trigger not found" }
+          "200": { "description": "Trigger details" }
         }
       }
     },
-    "/api/settings": {
+    "/api/triggers/{id}/stream": {
       "get": {
-        "tags": ["Settings"],
-        "summary": "Get server settings and base URL",
+        "tags": ["Triggers"],
+        "summary": "Live Server-Sent Events (SSE) log chunk stream for trigger",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
-          "200": {
-            "description": "Server settings",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "publicBaseUrl": { "type": "string", "example": "https://deploy.example.com" },
-                    "effectiveBaseUrl": { "type": "string", "example": "https://deploy.example.com" }
-                  }
-                }
-              }
-            }
-          }
+          "200": { "description": "SSE Event stream (text/event-stream)" }
+        }
+      }
+    },
+    "/api/notifications/channels": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List configured notification channels",
+        "responses": {
+          "200": { "description": "List of channels" }
         }
       },
-      "put": {
-        "tags": ["Settings"],
-        "summary": "Update server settings",
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Create notification channel",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "required": ["name", "provider"],
                 "properties": {
-                  "publicBaseUrl": { "type": "string", "example": "https://deploy.example.com" }
+                  "name": { "type": "string" },
+                  "provider": { "type": "string", "enum": ["slack", "discord", "telegram", "webhook"] },
+                  "webhook_url": { "type": "string" }
                 }
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Settings updated" },
-          "400": { "description": "Invalid URL" }
+          "201": { "description": "Channel created" }
+        }
+      }
+    },
+    "/api/notifications/channels/{id}/test": {
+      "post": {
+        "tags": ["Notifications"],
+        "summary": "Dispatch test alert to notification channel",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Test sent" }
+        }
+      }
+    },
+    "/api/badges/{serviceId}/status.svg": {
+      "get": {
+        "tags": ["Badges"],
+        "summary": "Get dynamic Shields.io compatible SVG status badge",
+        "parameters": [{ "name": "serviceId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "SVG image (image/svg+xml)" }
+        }
+      }
+    },
+    "/api/system/health": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Get live VPS system telemetry (CPU, RAM, Disk, Uptime)",
+        "responses": {
+          "200": { "description": "System health metrics" }
+        }
+      }
+    },
+    "/api/system/backup/export": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Download disaster recovery JSON configuration backup",
+        "responses": {
+          "200": { "description": "JSON backup file" }
+        }
+      }
+    },
+    "/api/system/backup/import": {
+      "post": {
+        "tags": ["System"],
+        "summary": "Restore server configurations from JSON backup",
+        "responses": {
+          "200": { "description": "Restored successfully" }
         }
       }
     },
     "/api/hooks/{hookToken}": {
       "post": {
         "tags": ["Webhooks"],
-        "summary": "Public inbound git webhook delivery endpoint",
-        "parameters": [
-          { "name": "hookToken", "in": "path", "required": true, "schema": { "type": "string" } }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "type": "object" }
-            }
-          }
-        },
+        "summary": "Public inbound git webhook receiver",
+        "parameters": [{ "name": "hookToken", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
-          "200": { "description": "Ping or skipped webhook processed" },
-          "202": { "description": "Webhook verified and deploy trigger enqueued" },
-          "401": { "description": "Signature verification failed" },
-          "404": { "description": "Unknown webhook token" }
+          "200": { "description": "Ping or skipped processed" },
+          "202": { "description": "Trigger enqueued" },
+          "401": { "description": "Signature verification failed" }
         }
       }
     }
   },
   "components": {
     "schemas": {
-      "Service": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer", "example": 1 },
-          "name": { "type": "string", "example": "Production Frontend" },
-          "provider": { "type": "string", "enum": ["github", "gitlab", "bitbucket", "gitea", "gogs", "generic"], "example": "github" },
-          "repo_url": { "type": "string", "example": "https://github.com/org/repo.git" },
-          "folder_path": { "type": "string", "example": "/var/www/my-app" },
-          "branch_mode": { "type": "string", "enum": ["webhook", "fixed", "current"], "example": "webhook" },
-          "fixed_branch": { "type": "string", "nullable": true, "example": "main" },
-          "allowed_branches": { "type": "string", "example": "main,staging" },
-          "sync_mode": { "type": "string", "enum": ["pull", "reset"], "example": "pull" },
-          "clone_if_empty": { "type": "boolean", "example": true },
-          "secret": { "type": "string", "example": "whsec_abcd1234" },
-          "generic_token_header": { "type": "string", "example": "X-Webhook-Token" },
-          "hook_token": { "type": "string", "example": "03fe4862b5d4e12e" },
-          "hook_url": { "type": "string", "example": "https://deploy.example.com/api/hooks/03fe4862b5d4e12e" },
-          "enabled": { "type": "boolean", "example": true },
-          "last_sync_at": { "type": "string", "nullable": true, "example": "2026-08-15T18:30:00.000Z" },
-          "last_status": { "type": "string", "nullable": true, "example": "success" }
-        }
-      },
       "ServiceInput": {
         "type": "object",
         "required": ["name", "repo_url", "folder_path"],
         "properties": {
-          "name": { "type": "string", "example": "Production Frontend" },
-          "provider": { "type": "string", "enum": ["github", "gitlab", "bitbucket", "gitea", "gogs", "generic"], "default": "github" },
-          "repo_url": { "type": "string", "example": "https://github.com/org/repo.git" },
-          "folder_path": { "type": "string", "example": "/var/www/my-app" },
-          "branch_mode": { "type": "string", "enum": ["webhook", "fixed", "current"], "default": "webhook" },
-          "fixed_branch": { "type": "string", "nullable": true, "example": "main" },
-          "allowed_branches": { "type": "string", "example": "main,staging" },
-          "sync_mode": { "type": "string", "enum": ["pull", "reset"], "default": "pull" },
-          "clone_if_empty": { "type": "boolean", "default": true },
-          "secret": { "type": "string", "example": "whsec_abcd1234" },
-          "generic_token_header": { "type": "string", "default": "X-Webhook-Token" },
-          "enabled": { "type": "boolean", "default": true },
+          "name": { "type": "string" },
+          "provider": { "type": "string", "enum": ["github", "gitlab", "bitbucket", "gitea", "gogs", "generic"] },
+          "repo_url": { "type": "string" },
+          "folder_path": { "type": "string" },
+          "branch_mode": { "type": "string", "enum": ["webhook", "fixed", "current"] },
+          "fixed_branch": { "type": "string" },
+          "allowed_branches": { "type": "string" },
+          "sync_mode": { "type": "string", "enum": ["pull", "reset"] },
+          "healthcheck_url": { "type": "string" },
+          "auto_rollback": { "type": "boolean" },
           "commands": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["command"],
               "properties": {
-                "command": { "type": "string", "example": "npm ci && npm run build" },
-                "branch_filter": { "type": "string", "example": "main" },
-                "continue_on_error": { "type": "boolean", "default": false }
+                "command": { "type": "string" },
+                "branch_filter": { "type": "string" },
+                "continue_on_error": { "type": "boolean" }
               }
             }
           }
         }
-      },
-      "ServiceWithCommands": {
-        "allOf": [
-          { "$ref": "#/components/schemas/Service" },
-          {
-            "type": "object",
-            "properties": {
-              "commands": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": { "type": "integer", "example": 1 },
-                    "command": { "type": "string", "example": "npm ci && npm run build" },
-                    "branch_filter": { "type": "string", "nullable": true, "example": "main" },
-                    "continue_on_error": { "type": "boolean", "example": false }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      },
-      "Trigger": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer", "example": 1 },
-          "service_id": { "type": "integer", "example": 1 },
-          "service_name": { "type": "string", "example": "Production Frontend" },
-          "service_provider": { "type": "string", "example": "github" },
-          "source": { "type": "string", "example": "webhook" },
-          "status": { "type": "string", "enum": ["queued", "running", "success", "failed", "skipped", "rejected"], "example": "success" },
-          "event": { "type": "string", "example": "push" },
-          "branch": { "type": "string", "example": "main" },
-          "sha": { "type": "string", "example": "9f7b6a1234567890abcdef" },
-          "signature_ok": { "type": "boolean", "nullable": true, "example": true },
-          "ip": { "type": "string", "example": "192.30.252.1" },
-          "created_at": { "type": "string", "example": "2026-08-15T18:30:00.000Z" },
-          "started_at": { "type": "string", "nullable": true, "example": "2026-08-15T18:30:01.000Z" },
-          "finished_at": { "type": "string", "nullable": true, "example": "2026-08-15T18:30:15.000Z" },
-          "duration_ms": { "type": "integer", "example": 14020 }
-        }
-      },
-      "TriggerDetail": {
-        "allOf": [
-          { "$ref": "#/components/schemas/Trigger" },
-          {
-            "type": "object",
-            "properties": {
-              "service_folder": { "type": "string", "example": "/var/www/my-app" },
-              "log": { "type": "string", "example": "[2026-08-15T18:30:01.000Z] Trigger #1 started\n[2026-08-15T18:30:03.000Z] Repository synced\n..." }
-            }
-          }
-        ]
       }
     }
   }

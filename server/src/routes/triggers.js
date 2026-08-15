@@ -1,9 +1,24 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
 import { requireAuth } from '../auth/session.js';
+import { addTriggerSubscriber, addGlobalSubscriber } from '../core/sse.js';
 
 const router = Router();
 router.use(requireAuth);
+
+router.get('/stream/global', (req, res) => {
+  addGlobalSubscriber(res);
+});
+
+router.get('/:id/stream', async (req, res, next) => {
+  try {
+    const trigger = await db('triggers').where({ id: req.params.id }).first();
+    if (!trigger) return res.status(404).json({ error: 'Trigger not found' });
+    addTriggerSubscriber(req.params.id, res);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get('/', async (req, res, next) => {
   try {

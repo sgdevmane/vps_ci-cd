@@ -1,12 +1,17 @@
 <script>
-  import { KeyRound, ShieldQuestion, Globe, Save, ExternalLink, Activity, BookOpen } from '@lucide/svelte';
+  import {
+    KeyRound, ShieldQuestion, Globe, Save, ExternalLink, Activity, BookOpen,
+    Bell, Download, Upload, Server,
+  } from '@lucide/svelte';
   import { api } from '../lib/api.js';
   import ChangePasswordModal from '../components/ChangePasswordModal.svelte';
+  import NotificationChannelsModal from '../components/NotificationChannelsModal.svelte';
   import { fireConfetti } from '../lib/confetti.js';
   import { toast, toastError } from '../lib/toast.svelte.js';
 
   let me = $state(null);
   let passModal = $state(false);
+  let notifModal = $state(false);
 
   let question = $state('');
   let answer = $state('');
@@ -15,6 +20,9 @@
   let baseUrl = $state('');
   let effective = $state('');
   let urlBusy = $state(false);
+
+  let fileInputRef;
+  let importBusy = $state(false);
 
   async function load() {
     try {
@@ -62,6 +70,29 @@
       urlBusy = false;
     }
   }
+
+  function downloadBackup() {
+    window.location.href = '/api/system/backup/export';
+    toast('Backup export downloaded', 'success');
+  }
+
+  async function handleImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    importBusy = true;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const res = await api.post('/api/system/backup/import', json);
+      fireConfetti({ count: 40 });
+      toast(res.message || 'Backup restored successfully', 'success');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      importBusy = false;
+      if (fileInputRef) fileInputRef.value = '';
+    }
+  }
 </script>
 
 <div class="card">
@@ -72,6 +103,19 @@
       <div class="small muted">Change the password you use to sign in to this panel.</div>
     </div>
     <button class="btn" onclick={() => (passModal = true)}>Change password</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="section-title"><Bell size={13} /> Outbound Notifications</div>
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;">
+    <div>
+      <div style="font-weight:650;">Slack, Discord, Telegram &amp; Webhooks</div>
+      <div class="small muted">Send real-time alerts when deployment triggers start, succeed, or fail.</div>
+    </div>
+    <button class="btn btn-primary" onclick={() => (notifModal = true)}>
+      <Bell size={14} /> Manage Notification Channels
+    </button>
   </div>
 </div>
 
@@ -115,6 +159,27 @@
   </button>
 </div>
 
+<!-- Disaster Recovery Backup / Restore -->
+<div class="card">
+  <div class="section-title"><Server size={13} /> Disaster Recovery &amp; Backup</div>
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+    <div>
+      <div style="font-weight:650;">Export / Import Server Configuration</div>
+      <div class="small muted">Download a JSON snapshot of all services, commands, settings, and notification channels.</div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn btn-sm" onclick={downloadBackup}>
+        <Download size={13} /> Export Backup
+      </button>
+      <input type="file" accept=".json" bind:this={fileInputRef} onchange={handleImport} style="display:none;" />
+      <button class="btn btn-sm" onclick={() => fileInputRef?.click()} disabled={importBusy}>
+        {#if importBusy}<span class="spinner"></span>{:else}<Upload size={13} />{/if}
+        Import Backup
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <div class="section-title"><Activity size={13} /> Developer API &amp; Telemetry</div>
   <div style="display:flex; flex-direction:column; gap:12px;">
@@ -141,4 +206,8 @@
 
 {#if passModal}
   <ChangePasswordModal onClose={() => (passModal = false)} />
+{/if}
+
+{#if notifModal}
+  <NotificationChannelsModal onClose={() => (notifModal = false)} />
 {/if}

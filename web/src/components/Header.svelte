@@ -1,5 +1,5 @@
 <script>
-  import { Sun, Moon, LogOut, Settings, ChevronDown, CircleUserRound } from '@lucide/svelte';
+  import { Sun, Moon, LogOut, Settings, ChevronDown, CircleUserRound, Cpu, HardDrive } from '@lucide/svelte';
   import { theme, toggleTheme } from '../lib/theme.svelte.js';
   import { auth, clearUser } from '../lib/auth.svelte.js';
   import { api } from '../lib/api.js';
@@ -7,6 +7,7 @@
 
   let { page } = $props();
   let menuOpen = $state(false);
+  let systemHealth = $state(null);
 
   const titles = $derived.by(() => {
     switch (page.name) {
@@ -23,6 +24,21 @@
       default:
         return ['Dashboard', 'Overview of your sync services and recent activity'];
     }
+  });
+
+  async function loadHealth() {
+    try {
+      const res = await api.get('/api/system/health');
+      systemHealth = res;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  $effect(() => {
+    loadHealth();
+    const timer = setInterval(loadHealth, 15000);
+    return () => clearInterval(timer);
   });
 
   async function logout() {
@@ -42,6 +58,19 @@
     <div class="header-sub">{titles[1]}</div>
   </div>
   <div class="header-actions">
+    {#if systemHealth}
+      <div class="badge badge-muted" style="display:flex; align-items:center; gap:8px; font-size:11.5px; padding:4px 10px;" title="Server Resource Utilization">
+        <span style="display:flex; align-items:center; gap:4px;">
+          <Cpu size={12} /> RAM: {systemHealth.memory.usedPercent}%
+        </span>
+        {#if systemHealth.disk}
+          <span style="border-left:1px solid var(--border); padding-left:8px; display:flex; align-items:center; gap:4px;">
+            <HardDrive size={12} /> Disk: {systemHealth.disk.usedPercent}%
+          </span>
+        {/if}
+      </div>
+    {/if}
+
     <button class="btn btn-ghost btn-icon" onclick={toggleTheme} title="Toggle theme">
       {#if theme.current === 'dark'}
         <Sun size={17} />
